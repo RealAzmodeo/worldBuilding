@@ -1411,7 +1411,7 @@ ${structuredInstructions}`;
           height: height,
         }}
       >
-        <div className="absolute -top-6 left-0 text-[10px] text-neutral-500 font-bold font-mono tracking-wider uppercase select-none">
+        <div data-toolcraft-product-text="true" className="absolute -top-6 left-0 text-[10px] text-neutral-500 font-bold font-mono tracking-wider uppercase select-none">
           Export Frame Boundary ({width} x {height})
         </div>
       </div>
@@ -1872,6 +1872,7 @@ ${structuredInstructions}`;
                           <div className="pointer-events-auto flex items-center justify-between">
                             {isSelected ? (
                               <input
+                                aria-label="Title"
                                 type="text"
                                 value={card.title || ""}
                                 onChange={(e) => {
@@ -3693,7 +3694,7 @@ ${structuredInstructions}`;
                           e.stopPropagation();
                           const nodes = canvasData.nodes.map(n => {
                             if (Array.isArray(n.tags)) {
-                              return { ...n, tags: n.tags.filter(t => t !== tag) };
+                              return { ...n, tags: n.tags.filter((t: any) => t !== tag) };
                             }
                             return n;
                           });

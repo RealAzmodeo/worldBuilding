@@ -465,7 +465,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.ollamaEndpoint",
@@ -479,7 +479,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.ollamaTemperature",
@@ -493,7 +493,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.ollamaSystemPrompt",
@@ -507,7 +507,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.snapToGrid",
@@ -521,7 +521,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.gridSize",
@@ -535,7 +535,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.theme",
@@ -549,7 +549,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output",
+    evidence: "persistence-state",
     optionCoverage: "each-visible-item"
   },
   {
@@ -564,7 +564,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.selectedCardId",
@@ -578,7 +578,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.selectedCardTitle",
@@ -592,7 +592,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.selectedCardType",
@@ -606,7 +606,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output",
+    evidence: "persistence-state",
     optionCoverage: "each-visible-item"
   },
   {
@@ -621,7 +621,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output",
+    evidence: "persistence-state",
     controlPartCoverage: ["colorOpacity.hex"]
   },
   {
@@ -636,7 +636,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.selectedConnectionId",
@@ -650,7 +650,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.selectedConnectionLabel",
@@ -664,7 +664,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.selectedConnectionStyle",
@@ -678,7 +678,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output",
+    evidence: "persistence-state",
     optionCoverage: "each-visible-item"
   },
   {
@@ -693,7 +693,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output",
+    evidence: "persistence-state",
     optionCoverage: "each-visible-item"
   },
   {
@@ -708,7 +708,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.canvasData",
@@ -722,7 +722,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.includeBackground",
@@ -736,7 +736,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output"
+    evidence: "persistence-state"
   },
   {
     id: "control.backgroundColor",
@@ -750,7 +750,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output",
+    evidence: "persistence-state",
     controlPartCoverage: ["colorOpacity.hex"]
   },
   {
@@ -765,7 +765,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output",
+    evidence: "persistence-state",
     optionCoverage: ["png", "jpg"]
   },
   {
@@ -780,7 +780,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output",
+    evidence: "persistence-state",
     optionCoverage: ["2k", "4k", "8k"]
   },
   {
@@ -795,7 +795,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     automatedTestName: "schema: validates worldbuilder control targets",
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
-    evidence: "product-output",
+    evidence: "persistence-state",
     actionCoverage: ["export.png", "workspace.addCard", "workspace.deleteCard", "workspace.clearBoard"]
   },
   {
