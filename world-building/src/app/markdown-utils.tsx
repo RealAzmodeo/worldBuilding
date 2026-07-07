@@ -74,15 +74,10 @@ export function parseTextToBlocks(text: string): Block[] {
     }
     
     // Parse Todo list (Checkbox)
-    if (cleanLine.startsWith("- [ ] ") || cleanLine.startsWith("* [ ] ") || cleanLine.startsWith("[ ] ") || cleanLine.startsWith("[] ")) {
-      const sliceLen = cleanLine.startsWith("- [ ] ") || cleanLine.startsWith("* [ ] ") ? 6 : (cleanLine.startsWith("[] ") ? 3 : 4);
-      blocks.push({ id: blockId, type: "todo", content: cleanLine.slice(sliceLen), checked: false, level });
-      i++;
-      continue;
-    }
-    if (cleanLine.startsWith("- [x] ") || cleanLine.startsWith("* [x] ") || cleanLine.startsWith("[x] ")) {
-      const sliceLen = cleanLine.startsWith("- [x] ") || cleanLine.startsWith("* [x] ") ? 6 : 4;
-      blocks.push({ id: blockId, type: "todo", content: cleanLine.slice(sliceLen), checked: true, level });
+    if (/^(?:[-*]\s+)?\[[ xX]\]/i.test(cleanLine) || cleanLine.startsWith("[] ")) {
+      const checked = /^(?:[-*]\s+)?\[[xX]\]/i.test(cleanLine);
+      const content = cleanLine.replace(/^(?:[-*]\s+)?\[[ xX]\]\s*/i, '').replace(/^\[\]\s*/, '');
+      blocks.push({ id: blockId, type: "todo", content, checked, level });
       i++;
       continue;
     }
