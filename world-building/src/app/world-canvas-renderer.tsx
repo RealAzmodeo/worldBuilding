@@ -1465,14 +1465,14 @@ ${structuredInstructions}`;
           };
 
           const connection = getClosestConnectionSide(fromRect, toRect);
-          const path = getBezierPath(
+          const path = React.useMemo(() => getBezierPath(
             connection.from.x,
             connection.from.y,
             connection.from.side,
             connection.to.x,
             connection.to.y,
             connection.to.side
-          );
+          ), [connection.from.x, connection.from.y, connection.from.side, connection.to.x, connection.to.y, connection.to.side]);
 
           const edgeId = edge.id || `edge_${edge.fromNode}_${edge.toNode}`;
           const isEdgeSelected = edgeId === selectedConnectionId;
@@ -3333,9 +3333,9 @@ ${structuredInstructions}`;
                           {getCategoryIcon(card.cardType || "general", 16)}
                         </span>
                       </div>
-                      <p style={{ fontSize: `${11 * globalFontScale}px` }} className="text-neutral-400 mt-2 line-clamp-3">
-                        {card.text ? card.text.replace(/[#\-*`]/g, "").slice(0, 120) : "No description."}
-                      </p>
+                      <div style={{ fontSize: `${11 * globalFontScale}px` }} className="text-neutral-400 mt-2 line-clamp-3 overflow-hidden">
+                        {card.text ? renderMarkdown(card.text.slice(0, 300)) : "No description."}
+                      </div>
                       {/* Tags Badges row at medium zoom */}
                       {card.tags && card.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-auto pt-2">
