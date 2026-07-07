@@ -25,6 +25,23 @@ import {
 import { TagInput } from "./tag-input";
 
 
+export interface CardNode {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height?: number;
+  color: string;
+  title: string;
+  cardType: string;
+  text: string;
+  tags?: string[];
+  isResized?: boolean;
+  coverImage?: string;
+  icon?: string;
+}
+
 export function WorldCanvasRenderer(): React.JSX.Element {
   const { state, dispatch } = useToolcraft();
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -142,6 +159,8 @@ export function WorldCanvasRenderer(): React.JSX.Element {
   const cardColorObj = state.values["workspace.selectedCardColor"] as { hex: string } | undefined;
   const cardColor = cardColorObj?.hex || "#70b0fa";
   const cardText = (state.values["workspace.selectedCardText"] as string) || "";
+  const cardCover = (state.values["workspace.selectedCardCover"] as string) || "";
+  const cardIcon = (state.values["workspace.selectedCardIcon"] as string) || "";
 
   // Canvas size and zoom
   const { width, height } = state.canvas.size;
@@ -184,6 +203,10 @@ export function WorldCanvasRenderer(): React.JSX.Element {
   const [categoryFilter, setCategoryFilter] = React.useState("all");
 
   // Context Menu state
+  const [dragBlockIndex, setDragBlockIndex] = React.useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = React.useState<number | null>(null);
+  const [formatMenu, setFormatMenu] = React.useState<{ x: number, y: number, text: string, blockId: string, index: number, inputEl: HTMLInputElement | HTMLTextAreaElement } | null>(null);
+  const [slashMenu, setSlashMenu] = React.useState<{ blockId: string, index: number, x: number, y: number, query: string } | null>(null);
   const [contextMenu, setContextMenu] = React.useState<{
     x: number;
     y: number;
@@ -208,32 +231,55 @@ export function WorldCanvasRenderer(): React.JSX.Element {
         return;
       }
       setContextMenu(null);
+      setSlashMenu(null);
     };
     
     const handleSelection = () => {
-      const activeEl = document.activeElement;
-      if (activeEl && (activeEl.tagName === "TEXTAREA" || activeEl.tagName === "INPUT")) {
-        const inputEl = activeEl as HTMLInputElement | HTMLTextAreaElement;
-        const start = inputEl.selectionStart ?? 0;
-        const end = inputEl.selectionEnd ?? 0;
-        if (start !== end) {
-          const cardEl = inputEl.closest("[data-node-id]");
-          const cardId = cardEl?.getAttribute("data-node-id") || "";
-          const text = inputEl.value.substring(start, end).trim();
-          if (text) {
-            lastSelectionRef.current = { text, cardId };
-            return;
+      setTimeout(() => {
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === "TEXTAREA" || activeEl.tagName === "INPUT")) {
+          const inputEl = activeEl as HTMLInputElement | HTMLTextAreaElement;
+          const start = inputEl.selectionStart ?? 0;
+          const end = inputEl.selectionEnd ?? 0;
+          if (start !== end) {
+            const blockInputIdMatch = inputEl.id.match(/^block-input-(.*)$/);
+            const text = inputEl.value.substring(start, end);
+
+            if (text && blockInputIdMatch) {
+              const rect = inputEl.getBoundingClientRect();
+
+              // We approximate the position of the popup based on the input rect
+              setFormatMenu({
+                x: rect.left + rect.width / 2,
+                y: rect.top - 40, // above the input
+                text,
+                blockId: blockInputIdMatch[1],
+                index: 0, // we will derive index at apply time or we don't strictly need it if we mutate value directly
+                inputEl
+              });
+
+              const cardEl = inputEl.closest("[data-node-id]");
+              const cardId = cardEl?.getAttribute("data-node-id") || "";
+              lastSelectionRef.current = { text: text.trim(), cardId };
+              return;
+            } else if (text) {
+              const cardEl = inputEl.closest("[data-node-id]");
+              const cardId = cardEl?.getAttribute("data-node-id") || "";
+              lastSelectionRef.current = { text: text.trim(), cardId };
+            }
           }
         }
-      }
-      
-      const sel = window.getSelection();
-      const selText = sel?.toString().trim();
-      if (selText) {
-        const cardEl = sel?.anchorNode?.parentElement?.closest("[data-node-id]");
-        const cardId = cardEl?.getAttribute("data-node-id") || "";
-        lastSelectionRef.current = { text: selText, cardId };
-      }
+
+        setFormatMenu(null);
+
+        const sel = window.getSelection();
+        const selText = sel?.toString().trim();
+        if (selText) {
+          const cardEl = sel?.anchorNode?.parentElement?.closest("[data-node-id]");
+          const cardId = cardEl?.getAttribute("data-node-id") || "";
+          lastSelectionRef.current = { text: selText, cardId };
+        }
+      }, 10);
     };
 
     window.addEventListener("click", closeMenu);
@@ -281,6 +327,49 @@ export function WorldCanvasRenderer(): React.JSX.Element {
     });
     return Array.from(tagSet);
   }, [canvasData.nodes]);
+
+
+  const applyFormat = (el: HTMLInputElement | HTMLTextAreaElement, markdownMarker: string) => {
+    const start = el.selectionStart || 0;
+    const end = el.selectionEnd || 0;
+    if (start === end) return;
+
+    const val = el.value;
+    const selectedText = val.substring(start, end);
+    const before = val.substring(0, start);
+    const after = val.substring(end);
+
+    // Check if it's already wrapped, if so unwrap
+    const markerLen = markdownMarker.length;
+    let newVal = "";
+    let newStart = start;
+    let newEnd = end;
+
+    if (before.endsWith(markdownMarker) && after.startsWith(markdownMarker)) {
+      newVal = before.slice(0, -markerLen) + selectedText + after.slice(markerLen);
+      newStart -= markerLen;
+      newEnd -= markerLen;
+    } else {
+      newVal = before + markdownMarker + selectedText + markdownMarker + after;
+      newStart += markerLen;
+      newEnd += markerLen; // only shift by the opening marker's length
+    }
+
+    // Trigger React's onChange using a native event setter
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set ||
+                                   Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+    nativeInputValueSetter?.call(el, newVal);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Restore selection
+    setTimeout(() => {
+      el.focus();
+      el.setSelectionRange(newStart, newEnd);
+    }, 10);
+
+    setFormatMenu(null);
+  };
+
 
   const handleOllamaGenerate = async (actionType: "rewrite" | "prompt", card: any) => {
     if (isGenerating) return;
@@ -733,6 +822,18 @@ ${structuredInstructions}`;
     });
     dispatch({
       type: "controls.setValue",
+      target: "workspace.selectedCardCover",
+      value: card.coverImage || "",
+      history: "skip",
+    });
+    dispatch({
+      type: "controls.setValue",
+      target: "workspace.selectedCardIcon",
+      value: card.icon || "",
+      history: "skip",
+    });
+    dispatch({
+      type: "controls.setValue",
       target: "workspace.selectedConnectionId",
       value: "",
       history: "skip",
@@ -1081,6 +1182,14 @@ ${structuredInstructions}`;
       node.text = cardText;
       changed = true;
     }
+    if (node.coverImage !== cardCover) {
+      node.coverImage = cardCover;
+      changed = true;
+    }
+    if (node.icon !== cardIcon) {
+      node.icon = cardIcon;
+      changed = true;
+    }
 
     if (changed) {
       const updatedData = { ...canvasData, nodes };
@@ -1091,7 +1200,7 @@ ${structuredInstructions}`;
         history: "merge",
       });
     }
-  }, [cardTitle, cardType, cardColor, cardText, selectedCardId]);
+  }, [cardTitle, cardType, cardColor, cardText, cardCover, cardIcon, selectedCardId]);
 
   // Sync edited connection state back to edges list
   React.useEffect(() => {
@@ -1672,124 +1781,203 @@ ${structuredInstructions}`;
                   {/* Detailed Zoom View */}
                   {showDetailedZoom ? (
                     <>
-                      {/* Card Header (Drag Handle) */}
+
+                      {/* Notion Style Card Header */}
                       <div
-                        className="flex items-center justify-between px-3 py-2 cursor-grab active:cursor-grabbing select-none border-b border-neutral-800 text-neutral-200"
-                        style={{ borderTop: `4px solid ${cardAccent}` }}
+                        className="flex flex-col relative group/cardheader border-b cursor-grab active:cursor-grabbing"
+                        style={{ borderTop: `4px solid ${cardAccent}`, borderColor: themeStyles.border }}
                         onPointerDown={(e) => startDragNode(e, card)}
                         onPointerMove={onDragNode}
                         onPointerUp={endDragNode}
                       >
-                        <div className="flex items-center gap-2 flex-1 mr-2">
-                          <span className="opacity-70" style={{ color: cardAccent }}>
-                            {getCategoryIcon(card.cardType || "general", 14)}
-                          </span>
-                          {isSelected ? (
-                            <input
-                              type="text"
-                              value={card.title || ""}
-                              onChange={(e) => {
-                                const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, title: e.target.value } : n);
-                                const updatedData = { ...canvasData, nodes };
-                                dispatch({
-                                  type: "controls.setValue",
-                                  target: "workspace.canvasData",
-                                  value: JSON.stringify(updatedData, null, 2),
-                                  history: "skip",
-                                });
-                                dispatch({
-                                  type: "controls.setValue",
-                                  target: "workspace.selectedCardTitle",
-                                  value: e.target.value,
-                                  history: "skip",
-                                });
-                              }}
-                              onBlur={() => {
-                                dispatch({
-                                  type: "controls.setValue",
-                                  target: "workspace.canvasData",
-                                  value: JSON.stringify(canvasData, null, 2),
-                                  history: "record",
-                                });
-                              }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              style={{
-                                fontSize: `${12 * globalFontScale}px`,
-                                color: themeStyles.text,
-                                borderColor: themeStyles.border,
-                              }}
-                              className="flex-1 bg-neutral-950/40 font-bold font-mono tracking-wide border rounded px-1.5 py-0.5 focus:outline-none focus:border-link w-0 min-w-[100px]"
-                            />
-                          ) : (
-                            <span style={{ fontSize: `${12 * globalFontScale}px` }} className="font-bold font-mono tracking-wide">{card.title || "Untitled Card"}</span>
-                          )}
-                        </div>
-                        {isSelected ? (
-                          <div className="flex items-center gap-1.5 pointer-events-auto">
-                            <button
-                              onPointerDown={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                if (aiCardId === card.id) {
-                                  setAiCardId(null);
-                                } else {
-                                  setAiCardId(card.id);
-                                  setAiPrompt("");
-                                  setAiTab("rewrite");
-                                  fetchAvailableModels();
-                                  // Clear cached prompt for this card type so edited files are always reloaded
-                                  const typeKey = (card.cardType || card.type || "general").toLowerCase();
-                                  delete promptCacheRef.current[typeKey];
-                                }
-                              }}
-                              className={`p-1 rounded transition cursor-pointer flex items-center justify-center ${
-                                aiCardId === card.id
-                                  ? "bg-purple-600 text-white shadow-md shadow-purple-500/30"
-                                  : "bg-neutral-800 hover:bg-neutral-750 text-neutral-400 hover:text-purple-400 border border-neutral-700"
-                              }`}
-                              style={{ height: "20px", width: "20px" }}
-                              title="Asistente de Redacción IA (Ollama)"
-                            >
-                              <Sparkles size={11} className={isGenerating && aiCardId === card.id ? "animate-pulse" : ""} />
-                            </button>
-                            <select
-                              value={card.cardType || "general"}
-                              onChange={(e) => {
-                                const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, cardType: e.target.value } : n);
-                                const updatedData = { ...canvasData, nodes };
-                                dispatch({
-                                  type: "controls.setValue",
-                                  target: "workspace.canvasData",
-                                  value: JSON.stringify(updatedData, null, 2),
-                                  history: "record",
-                                });
-                                dispatch({
-                                  type: "controls.setValue",
-                                  target: "workspace.selectedCardType",
-                                  value: e.target.value,
-                                  history: "skip",
-                                });
-                              }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              style={{ fontSize: `${9 * globalFontScale}px` }}
-                              className="uppercase px-1 py-0.5 rounded font-bold tracking-wider bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 pointer-events-auto cursor-pointer focus:outline-none focus:ring-1 focus:ring-link"
-                            >
-                              <option value="character">Character</option>
-                              <option value="location">Location</option>
-                              <option value="faction">Faction</option>
-                              <option value="magic_spell">Magic Spell</option>
-                              <option value="general">General</option>
-                              <option value="group">Group</option>
-                            </select>
+                        {/* Cover Image */}
+                        {(card.coverImage || isSelected) && (
+                          <div className="relative w-full h-24 bg-neutral-800/50 flex items-center justify-center overflow-hidden">
+                            {card.coverImage ? (
+                              <img src={card.coverImage} className="w-full h-full object-cover pointer-events-none" alt="Cover" />
+                            ) : (
+                              <div className="text-[10px] text-neutral-500 font-medium">Add Cover Image</div>
+                            )}
+
+                            {/* Hover Controls for Cover */}
+                            {isSelected && (
+                              <div className="absolute top-2 right-2 opacity-0 group-hover/cardheader:opacity-100 transition-opacity pointer-events-auto flex gap-1">
+                                <label className="px-2 py-1 bg-neutral-900/80 hover:bg-neutral-800 text-white text-[9px] rounded cursor-pointer backdrop-blur shadow-sm transition" onPointerDown={e=>e.stopPropagation()}>
+                                  {card.coverImage ? "Change Cover" : "Add Cover"}
+                                  <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      const reader = new FileReader();
+                                      reader.onload = (event) => {
+                                        const url = event.target?.result;
+                                        const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, coverImage: url } : n);
+                                        dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify({ ...canvasData, nodes }, null, 2), history: "record" });
+                                        if (card.id === selectedCardId) {
+                                          dispatch({ type: "controls.setValue", target: "workspace.selectedCardCover", value: url, history: "skip" });
+                                        }
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }
+                                  }} />
+                                </label>
+                                {card.coverImage && (
+                                  <button
+                                    className="px-2 py-1 bg-neutral-900/80 hover:bg-rose-500/80 text-white text-[9px] rounded cursor-pointer backdrop-blur shadow-sm transition"
+                                    onPointerDown={(e) => {
+                                      e.stopPropagation();
+                                      const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, coverImage: "" } : n);
+                                      dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify({ ...canvasData, nodes }, null, 2), history: "record" });
+                                      if (card.id === selectedCardId) {
+                                        dispatch({ type: "controls.setValue", target: "workspace.selectedCardCover", value: "", history: "skip" });
+                                      }
+                                    }}
+                                  >Remove</button>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          <span
-                            className="text-[9px] uppercase px-1.5 py-0.5 rounded font-bold tracking-wider text-neutral-200"
-                            style={{ backgroundColor: `${cardAccent}20`, border: `1px solid ${cardAccent}40`, fontSize: `${9 * globalFontScale}px` }}
-                          >
-                            {card.cardType}
-                          </span>
                         )}
+
+                        {/* Title & Icon Area */}
+                        <div className="px-5 pt-3 pb-4 relative z-10">
+                          {/* Icon Profile */}
+                          {(card.icon || isSelected) && (
+                            <div className="${card.coverImage ? '-mt-10' : ''} mb-2 relative pointer-events-auto">
+                              <div className="w-12 h-12 bg-neutral-800 rounded flex items-center justify-center text-2xl border-2 shadow-sm relative group/icon" style={{ borderColor: themeStyles.cardBg }}>
+                                {card.icon ? card.icon : <span className="opacity-50 text-base" style={{color: cardAccent}}>{getCategoryIcon(card.cardType || "general", 20)}</span>}
+
+                                {isSelected && (
+                                  <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 opacity-0 group-hover/icon:opacity-100 transition-opacity bg-neutral-900 rounded border shadow p-0.5 flex gap-0.5 z-20">
+                                    {['😀','🗺️','⚔️','🔮','📝'].map(emoji => (
+                                      <button key={emoji} className="w-5 h-5 flex items-center justify-center hover:bg-neutral-800 rounded text-[10px]" onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, icon: emoji } : n);
+                                        dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify({ ...canvasData, nodes }, null, 2), history: "record" });
+                                        if (card.id === selectedCardId) dispatch({ type: "controls.setValue", target: "workspace.selectedCardIcon", value: emoji, history: "skip" });
+                                      }}>{emoji}</button>
+                                    ))}
+                                    <button className="w-5 h-5 flex items-center justify-center hover:bg-rose-500/20 text-rose-500 rounded text-[10px]" onPointerDown={(e) => {
+                                      e.stopPropagation();
+                                      const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, icon: "" } : n);
+                                      dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify({ ...canvasData, nodes }, null, 2), history: "record" });
+                                      if (card.id === selectedCardId) dispatch({ type: "controls.setValue", target: "workspace.selectedCardIcon", value: "", history: "skip" });
+                                    }}>×</button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Title Input */}
+                          <div className="pointer-events-auto flex items-center justify-between">
+                            {isSelected ? (
+                              <input
+                                type="text"
+                                value={card.title || ""}
+                                onChange={(e) => {
+                                  const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, title: e.target.value } : n);
+                                  dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify({ ...canvasData, nodes }, null, 2), history: "skip" });
+                                  dispatch({ type: "controls.setValue", target: "workspace.selectedCardTitle", value: e.target.value, history: "skip" });
+                                }}
+                                onBlur={() => dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify(canvasData, null, 2), history: "record" })}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                placeholder="Untitled"
+                                className="w-full bg-transparent font-bold text-2xl border-none focus:outline-none placeholder-neutral-600 transition"
+                                style={{ color: themeStyles.text }}
+                              />
+                            ) : (
+                              <h1 className="font-bold text-2xl" style={{ color: themeStyles.text }}>{card.title || "Untitled"}</h1>
+                            )}
+
+                            {/* AI / Card Type Controls for Selected */}
+                            {isSelected && (
+                              <div className="flex items-center gap-1.5 pointer-events-auto shrink-0 ml-2">
+                                <button
+                                  onPointerDown={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    if (aiCardId === card.id) setAiCardId(null);
+                                    else {
+                                      setAiCardId(card.id);
+                                      setAiPrompt("");
+                                      setAiTab("rewrite");
+                                      fetchAvailableModels();
+                                      const typeKey = (card.cardType || card.type || "general").toLowerCase();
+                                      delete promptCacheRef.current[typeKey];
+                                    }
+                                  }}
+                                  className={`p-1.5 rounded transition cursor-pointer flex items-center justify-center ${
+                                    aiCardId === card.id ? "bg-purple-600 text-white shadow-md shadow-purple-500/30" : "bg-neutral-800 hover:bg-neutral-750 text-neutral-400 hover:text-purple-400 border border-neutral-700"
+                                  }`}
+                                  title="Asistente de Redacción IA (Ollama)"
+                                >
+                                  <Sparkles size={14} className={isGenerating && aiCardId === card.id ? "animate-pulse" : ""} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Meta properties (Notion style) */}
+                          <div className="flex flex-col gap-2 mt-4 text-[11px] pointer-events-auto">
+                            {/* Type Property */}
+                            <div className="flex items-center gap-4">
+                              <div className="w-16 text-neutral-500 font-medium flex items-center gap-1.5"><Folder size={12} /> Type</div>
+                              {isSelected ? (
+                                <select
+                                  value={card.cardType || "general"}
+                                  onChange={(e) => {
+                                    const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, cardType: e.target.value } : n);
+                                    dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify({ ...canvasData, nodes }, null, 2), history: "record" });
+                                    dispatch({ type: "controls.setValue", target: "workspace.selectedCardType", value: e.target.value, history: "skip" });
+                                  }}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  className="bg-neutral-800/50 hover:bg-neutral-800 text-neutral-300 rounded px-2 py-0.5 border border-transparent hover:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-link transition cursor-pointer"
+                                >
+                                  <option value="character">Character</option>
+                                  <option value="location">Location</option>
+                                  <option value="faction">Faction</option>
+                                  <option value="magic_spell">Magic Spell</option>
+                                  <option value="general">General</option>
+                                </select>
+                              ) : (
+                                <span className="bg-neutral-800/40 text-neutral-300 rounded px-2 py-0.5 border border-transparent capitalize">{card.cardType || "general"}</span>
+                              )}
+                            </div>
+
+                            {/* Tags Property */}
+                            <div className="flex items-start gap-4">
+                              <div className="w-16 text-neutral-500 font-medium flex items-center gap-1.5 mt-0.5"><MapPin size={12} /> Tags</div>
+                              <div className="flex-1">
+                                {card.tags && card.tags.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {card.tags.map((t: string) => (
+                                      <span key={t} className="bg-neutral-800/60 text-neutral-300 px-1.5 py-0.5 rounded border border-neutral-700/50 flex items-center gap-1">
+                                        {t}
+                                        {isSelected && (
+                                          <button
+                                            onPointerDown={(e) => {
+                                              e.stopPropagation();
+                                              const updatedTags = (card.tags || []).filter((tag: string) => tag !== t);
+                                              updateCardTags(card.id, updatedTags);
+                                            }}
+                                            className="hover:text-rose-400 ml-0.5"
+                                          >×</button>
+                                        )}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-neutral-600 italic">Empty</span>
+                                )}
+                                {isSelected && (
+                                  <div className="mt-1">
+                                    <TagInput card={card} canvasData={canvasData} onUpdateTags={(newTags) => updateCardTags(card.id, newTags)} />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Card Body */}
@@ -1990,7 +2178,31 @@ ${structuredInstructions}`;
 
                           const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, blockIdx: number) => {
                              const block = blocks[blockIdx];
-                             if (e.key === "Tab") {
+                             if (e.key === "/") {
+                               // Do not prevent default so the slash is typed
+                               setTimeout(() => {
+                                 const el = e.target as HTMLInputElement | HTMLTextAreaElement;
+                                 const val = el.value;
+                                 const cursor = el.selectionStart || 0;
+
+                                 // Check if we are at start or after a space/newline
+                                 const beforeCursor = val.substring(0, cursor);
+                                 const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+
+                                 if (match) {
+                                   const rect = el.getBoundingClientRect();
+                                   setSlashMenu({
+                                     blockId: block.id,
+                                     index: blockIdx,
+                                     x: rect.left,
+                                     y: rect.bottom + window.scrollY,
+                                     query: match[1] || ""
+                                   });
+                                 }
+                               }, 10);
+                             } else if (e.key === "Escape") {
+                               setSlashMenu(null);
+                             } else if (e.key === "Tab") {
                                e.preventDefault();
                                const newBlocks = [...blocks];
                                const levelShift = e.shiftKey ? -1 : 1;
@@ -2323,7 +2535,20 @@ ${structuredInstructions}`;
                                 <textarea
                                   id={`block-input-${block.id}`}
                                   value={block.content || ""}
-                                  onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                  onChange={(e) => {
+                                    updateBlock(originalIndex, { content: e.target.value });
+                                    if (slashMenu && slashMenu.blockId === block.id) {
+                                      const val = e.target.value;
+                                      const cursor = e.target.selectionStart || 0;
+                                      const beforeCursor = val.substring(0, cursor);
+                                      const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                      if (match) {
+                                        setSlashMenu({ ...slashMenu, query: match[1] });
+                                      } else {
+                                        setSlashMenu(null);
+                                      }
+                                    }
+                                  }}
                                   onPointerDown={(e) => e.stopPropagation()}
                                   onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                   onFocus={() => setFocusedBlockId(block.id)}
@@ -2351,7 +2576,20 @@ ${structuredInstructions}`;
                                     id={`block-input-${block.id}`}
                                     type="text"
                                     value={block.content || ""}
-                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
+                                      }
+                                    }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     onFocus={() => setFocusedBlockId(block.id)}
@@ -2382,7 +2620,20 @@ ${structuredInstructions}`;
                                     id={`block-input-${block.id}`}
                                     type="text"
                                     value={block.content || ""}
-                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
+                                      }
+                                    }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     onFocus={() => setFocusedBlockId(block.id)}
@@ -2413,7 +2664,20 @@ ${structuredInstructions}`;
                                     id={`block-input-${block.id}`}
                                     type="text"
                                     value={block.content || ""}
-                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
+                                      }
+                                    }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     onFocus={() => setFocusedBlockId(block.id)}
@@ -2434,7 +2698,20 @@ ${structuredInstructions}`;
                                     id={`block-input-${block.id}`}
                                     type="text"
                                     value={block.content || ""}
-                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
+                                      }
+                                    }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     onFocus={() => setFocusedBlockId(block.id)}
@@ -2452,7 +2729,20 @@ ${structuredInstructions}`;
                                     id={`block-input-${block.id}`}
                                     type="text"
                                     value={block.content || ""}
-                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
+                                      }
+                                    }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     onFocus={() => setFocusedBlockId(block.id)}
@@ -2476,7 +2766,20 @@ ${structuredInstructions}`;
                                     id={`block-input-${block.id}`}
                                     type="text"
                                     value={block.content || ""}
-                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
+                                      }
+                                    }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     onFocus={() => setFocusedBlockId(block.id)}
@@ -2508,7 +2811,20 @@ ${structuredInstructions}`;
                                     id={`block-input-${block.id}`}
                                     type="text"
                                     value={block.content || ""}
-                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
+                                      }
+                                    }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     onFocus={() => setFocusedBlockId(block.id)}
@@ -2542,7 +2858,20 @@ ${structuredInstructions}`;
                                     id={`block-input-${block.id}`}
                                     type="text"
                                     value={block.content || ""}
-                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
+                                      }
+                                    }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     placeholder="Callout note..."
@@ -2575,7 +2904,20 @@ ${structuredInstructions}`;
                                   <textarea
                                     id={`block-input-${block.id}`}
                                     value={block.content || ""}
-                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
+                                      }
+                                    }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     placeholder="// Write code here..."
@@ -2708,12 +3050,25 @@ ${structuredInstructions}`;
                               <div key={block.id} className="flex flex-col w-full text-left">
                                 {/* Block row */}
                                 <div
-                                  className="group/block relative flex items-start gap-1 p-1 rounded hover:bg-neutral-500/5 transition duration-100 w-full"
+                                  className={`group/block relative flex items-start gap-1 p-1 rounded hover:bg-neutral-500/5 transition duration-100 w-full ${dropTargetIndex === originalIndex ? "border-t-2 border-link mt-1 pt-0" : ""}`}
                                   data-block-id={block.id}
-                                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (dragBlockIndex !== null && dragBlockIndex !== originalIndex) {
+                                      setDropTargetIndex(originalIndex);
+                                    }
+                                  }}
+                                  onDragLeave={(e) => {
+                                    if (dropTargetIndex === originalIndex) {
+                                      setDropTargetIndex(null);
+                                    }
+                                  }}
                                   onDrop={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
+                                    setDropTargetIndex(null);
+                                    setDragBlockIndex(null);
                                     const fromIdxStr = e.dataTransfer.getData("text/plain");
                                     const fromIdx = parseInt(fromIdxStr);
                                     const toIdx = originalIndex;
@@ -2733,8 +3088,13 @@ ${structuredInstructions}`;
                                     onDragStart={(e) => {
                                       e.stopPropagation();
                                       e.dataTransfer.setData("text/plain", originalIndex.toString());
+                                      setDragBlockIndex(originalIndex);
                                       const blockEl = document.querySelector(`[data-block-id="${block.id}"]`);
                                       if (blockEl) e.dataTransfer.setDragImage(blockEl, 10, 10);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDragBlockIndex(null);
+                                      setDropTargetIndex(null);
                                     }}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     className="opacity-0 group-hover/block:opacity-100 flex items-center justify-center cursor-grab active:cursor-grabbing p-1 rounded text-neutral-500 hover:bg-neutral-500/10 transition self-center mr-1 h-5 w-4"
@@ -2953,42 +3313,7 @@ ${structuredInstructions}`;
                         </div>
                       )}
 
-                      {/* Tags Badges Row */}
-                      {card.tags && card.tags.length > 0 ? (
-                        <div className="flex flex-wrap gap-1 px-3 py-1.5 bg-neutral-950/40 border-t border-neutral-900">
-                          {card.tags.map((t: string) => (
-                            <span key={t} className="text-[9px] font-semibold bg-neutral-850 text-neutral-300 px-1.5 py-0.5 rounded border border-neutral-800/80">
-                              {t}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {/* Tag Editor Input inside card body when selected */}
-                      {isSelected && (
-                        <div className="px-3 py-2 bg-neutral-950/80 border-t border-neutral-900 text-xs">
-                          <div className="flex gap-1.5 items-center mb-1 flex-wrap">
-                            <span className="text-[10px] text-neutral-500 font-bold uppercase">Tags:</span>
-                            {(card.tags || []).map((t: string) => (
-                              <button
-                                key={t}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const updatedTags = (card.tags || []).filter((tag: string) => tag !== t);
-                                  updateCardTags(card.id, updatedTags);
-                                }}
-                                className="group text-[9px] font-semibold bg-neutral-900 hover:bg-rose-950/40 hover:text-rose-400 text-neutral-350 px-1.5 py-0.5 rounded border border-neutral-800 flex items-center gap-1 transition"
-                                title="Click to remove"
-                              >
-                                {t}
-                                <span className="text-neutral-500 group-hover:text-rose-500">×</span>
-                              </button>
-                            ))}
-                          </div>
-                          <TagInput card={card} canvasData={canvasData} onUpdateTags={(newTags) => updateCardTags(card.id, newTags)} />
-                        </div>
-                      )}
-                    </>
+                                          </>
                   ) : null}
 
                   {/* Medium Zoom View */}
@@ -3468,6 +3793,158 @@ ${structuredInstructions}`;
               })()}
             </div>
           )}
+        </div>,
+        document.body
+      )}
+
+
+
+      {formatMenu && createPortal(
+        <div
+          className="fixed z-[10000] rounded-md border shadow-xl backdrop-blur-md flex items-center p-1 text-[11px] pointer-events-auto gap-1"
+          style={{
+            left: `${formatMenu.x}px`,
+            top: `${formatMenu.y}px`,
+            transform: "translateX(-50%)",
+            backgroundColor: theme === "light" ? "rgba(245, 238, 224, 0.98)" : "rgba(18, 18, 18, 0.98)",
+            borderColor: themeStyles.border,
+            color: themeStyles.text,
+          }}
+          onMouseDown={(e) => {
+            // keep focus on the input when we click the menu
+            e.preventDefault();
+          }}
+        >
+          <button
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              applyFormat(formatMenu.inputEl, "**");
+            }}
+            className="w-7 h-7 flex items-center justify-center font-bold hover:bg-neutral-800/20 rounded cursor-pointer transition"
+            title="Bold"
+          >
+            B
+          </button>
+          <button
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              applyFormat(formatMenu.inputEl, "*");
+            }}
+            className="w-7 h-7 flex items-center justify-center italic font-serif hover:bg-neutral-800/20 rounded cursor-pointer transition"
+            title="Italic"
+          >
+            I
+          </button>
+          <button
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              applyFormat(formatMenu.inputEl, "`");
+            }}
+            className="w-7 h-7 flex items-center justify-center font-mono hover:bg-neutral-800/20 rounded cursor-pointer transition"
+            title="Code"
+          >
+            &lt;/&gt;
+          </button>
+        </div>,
+        document.body
+      )}
+
+      {slashMenu && createPortal(
+        <div
+          className="fixed z-[10000] min-w-[200px] rounded-lg border shadow-xl backdrop-blur-md p-1 flex flex-col text-[10px] pointer-events-auto"
+          style={{
+            left: `${slashMenu.x}px`,
+            top: `${slashMenu.y}px`,
+            backgroundColor: theme === "light" ? "rgba(245, 238, 224, 0.98)" : "rgba(18, 18, 18, 0.98)",
+            borderColor: themeStyles.border,
+            color: themeStyles.text,
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-2 py-1 text-[8px] uppercase tracking-wider text-neutral-500 font-bold border-b mb-1" style={{ borderColor: themeStyles.border }}>
+            Basic Blocks
+          </div>
+          <div
+            className="max-h-64 overflow-y-auto overscroll-y-contain space-y-0.5"
+            onWheel={(e) => e.stopPropagation()}
+          >
+            {[
+              { label: "Text", type: "paragraph", desc: "Just start typing with plain text.", icon: "T" },
+              { label: "Heading 1", type: "heading1", desc: "Large section heading.", icon: "H1" },
+              { label: "Heading 2", type: "heading2", desc: "Medium section heading.", icon: "H2" },
+              { label: "Heading 3", type: "heading3", desc: "Small section heading.", icon: "H3" },
+              { label: "To-do list", type: "todo", desc: "Track tasks with a to-do list.", icon: "☑" },
+              { label: "Bulleted list", type: "list-item", desc: "Create a simple bulleted list.", icon: "•" },
+              { label: "Numbered list", type: "numbered-list", desc: "Create a list with numbering.", icon: "1." },
+              { label: "Toggle list", type: "toggle", desc: "Toggles can hide and show content inside.", icon: "▶" },
+              { label: "Divider", type: "divider", desc: "Visually divide blocks.", icon: "—" },
+              { label: "Callout", type: "callout", desc: "Make writing stand out.", icon: "💡" },
+              { label: "Code", type: "code", desc: "Capture a code snippet.", icon: "</>" },
+              { label: "Image", type: "image", desc: "Upload or embed an image.", icon: "🖼️" },
+              { label: "Table", type: "table", desc: "Add a simple tabular data.", icon: "▦" },
+            ]
+              .filter(opt => opt.label.toLowerCase().includes(slashMenu.query.toLowerCase()) || opt.type.toLowerCase().includes(slashMenu.query.toLowerCase()))
+              .map((opt) => (
+              <button
+                key={opt.type}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+
+                  // Update block to remove the slash query and set new type
+                  const blockNode = canvasData.nodes.find(n => n.id === selectedCardId);
+                  if (blockNode) {
+                    const blocks = parseTextToBlocks(blockNode.text || "");
+                    const b = blocks[slashMenu.index];
+                    if (b) {
+                      // replace the slash query with empty
+                      const val = b.content || "";
+                      const newVal = val.replace(/(^|\s)\/(.*)$/, "$1");
+
+                      let newType: Block["type"] = opt.type as any;
+                      b.type = newType;
+                      b.content = newVal;
+
+                      // Handle initializations
+                      if (newType === "todo") b.checked = false;
+                      if (newType === "table") { b.headers = ["Col 1", "Col 2"]; b.rows = [["Cell 1", "Cell 2"]]; }
+                      if (newType === "image") { b.caption = ""; b.url = ""; }
+                      if (newType === "callout") { b.emoji = "💡"; }
+
+                      const newText = serializeBlocksToText(blocks);
+                      const nodes = canvasData.nodes.map(n => n.id === blockNode.id ? { ...n, text: newText } : n);
+                      dispatch({
+                        type: "controls.setValue",
+                        target: "workspace.canvasData",
+                        value: JSON.stringify({ ...canvasData, nodes }, null, 2),
+                        history: "record"
+                      });
+                      dispatch({
+                        type: "controls.setValue",
+                        target: "workspace.selectedCardText",
+                        value: newText,
+                        history: "skip"
+                      });
+                    }
+                  }
+
+                  setSlashMenu(null);
+                }}
+                className="w-full text-left px-2 py-1.5 hover:bg-neutral-800/20 rounded transition flex items-center gap-2 cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded border bg-neutral-900/50 flex items-center justify-center font-bold text-xs" style={{ borderColor: themeStyles.border }}>
+                  {opt.icon}
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-semibold text-xs text-neutral-200">{opt.label}</span>
+                  <span className="text-[9px] text-neutral-500 font-normal leading-none mt-0.5">{opt.desc}</span>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>,
         document.body
       )}
