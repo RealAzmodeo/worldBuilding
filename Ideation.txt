@@ -1,0 +1,222 @@
+Technical Architecture and Product Design Blueprint for a Next-Generation Visual Worldbuilding ToolParadigm Shift in Worldbuilding and Narrative Design SoftwareThe design of software for worldbuilders, novelists, and game masters has undergone a significant paradigm shift. Fictional worldbuilding requires managing a massive web of geography, timeline chronologies, character networks, and structural rule systems. Historically, creators relied on binders, index cards, and eventually linear, text-based personal wikis. While wikis provide a clean way to write entries, they often separate the conceptual data from spatial layouts. This separation forces creators to manage links manually, which increases the cognitive load of keeping a long-term project consistent. Modern narrative engines resolve this by treating the world not as a collection of separate documents, but as an integrated spatial knowledge graph.+-----------------------------------------------------------------+
+|                         SHARED CARD LIBRARY                     |
+|  Contains all atomic entities (Markdown files with Metadata)    |
+|                                                                 |
+|   [Card: Sai of Trobia]       [Card: Trobian Guild]             |
+|   Properties:                  Properties:                      |
+|     - Dialect: Archaic           - Type: Faction                |
+|     - Faction: Guild             - HQ: Capital City             |
++-----------------------------------------------------------------+
+          |                               |
+          | (Referenced)                  | (Referenced)
+          v                               v
++-------------------------+     +---------------------------------+
+|   WHITEBOARD A: SOCIAL  |     |   MAP LAYER B: REGIONAL         |
+|  - Renders Character    |     |  - Renders Faction Headquarters |
+|    Relationship Graph   |     |    as an Interactive Map Pin    |
+|  - Edit updates both    |     |  - Clicking pin opens Card      |
++-------------------------+     +---------------------------------+
+At the core of this modern spatial architecture is a strict separation of the Card Library (Data Layer) from the Whiteboard Canvas (Presentation Layer). In this model, conceptual entities—such as characters, items, or locations—are stored as unique data objects in a central database. The visual canvases are dynamic viewports that reference these objects.This separation introduces several critical benefits:Data Reusability without Duplication: A single character node can appear simultaneously on a family tree whiteboard, a geographical map, and a scene-by-scene outline board.Real-time Synced Updates: Editing a card's name or metadata on one canvas immediately updates its appearance on every other canvas and wiki page in the project.Preserved Semantic Context: The system tracks exactly which whiteboards and maps reference a specific card. This allows creators to instantly recall the conceptual relationships and structural context surrounding an entity.Rather than forcing information into rigid, nested hierarchies, an infinite canvas replicates the associative way the human brain structures complex ideas. By combining freeform visual nodes with structured data properties, this hybrid approach allows creators to build and organize detailed fictional settings more efficiently.Interactive Interface Design and Visual Complexity MitigationA primary challenge when displaying large narrative graphs is managing visual clutter. As the count of nodes and edges increases, infinite canvases are prone to layout issues like "hairballs" (densely tangled links) or "snowstorms" (an overwhelming number of visible labels and cards). Keeping a large, complex graph readable and easy to navigate requires incorporating proven visual layout algorithms and interactive UI design patterns.[Viewport Scale: High (s >= 0.7)]
++-------------------------------------------------------------+
+| Character: Sai of Trobia                                    |
+| Archetype: Dynamic Protagonist                              |
+| Arc: Redeeming the Fallen House                             |
+| ----------------------------------------------------------- |
+| Sai speaks in a distinct, archaic dialect. Born in Stardust |
+| but raised under Trobian tutelage, his path is...           |
++-------------------------------------------------------------+
+
+                          [Zoom Out]
+                              |
+                              v
+
+[Viewport Scale: Medium (0.3 <= s < 0.7)]
++-------------------------------------------------------------+
+| Sai of Trobia                                               |
+| Dialect: Archaic | Status: Active                           |
++-------------------------------------------------------------+
+
+                          [Zoom Out]
+                              |
+                              v
+
+[Viewport Scale: Low (s < 0.3)]
++-----------------------+
+|        [Icon]         |
++-----------------------+
+To address this challenge, the software can implement an interactive rendering pipeline based on semantic zoom. Unlike graphic zooming, which simply scales the size of layout elements, semantic zoom changes the level of detail displayed on a node based on the user's zoom factor. As the viewport scale shifts, the rendering engine transitions through three distinct layout states to optimize readability:Table 1: Semantic Zoom Level of Detail ConfigurationsZoom LevelViewport Scale (s)Rendered Primitives & Layout ElementsNode Styles & Text FormattingHigh (Detailed)$s \ge 0.7$[cite: 15]• Full Markdown rich text editor• Interactive subnode portals• Editable metadata properties form• Standard body typography (14px–16px)• High-contrast borders• Fully visible controlsMedium (Standard)$0.3 \le s < 0.7$[cite: 15]• Node title and icon• Primary properties (e.g., character status)• Summary abstract snippet• Larger subheader font (18px–22px)• Simplified background styling• Hidden internal scrollbarsLow (Abstract)$s < 0.3$[cite: 15]• Simplified symbolic icon• Color-coded category badge• Collapsed group container boundaries• Large header typography (32px)• Solid, high-contrast block colors• No body text renderedThe engine also manages performance on large canvases by using spatial tidy-up and rendering algorithms:Viewport Culling and Canvas Virtualization: The engine only renders elements that are currently inside the user's viewport. Unfocused or off-screen nodes are temporarily removed from the DOM, which keeps pan and zoom interactions smooth even with thousands of nodes on the canvas.Collapsible Grouping and Selection Encapsulation: Users can select multiple nodes and group them into a container. Collapsing the group hides the internal nodes and replaces them with a single summary node, which preserves the overall layout of the surrounding canvas.Split Node by Headings: Long wiki pages can be deconstructed into a hierarchical tree of connected nodes based on their markdown headings. This makes it easy to split a long story outline or world bible into smaller, manageable chunks.Automatic Grid Alignment and Tidy-Up: New nodes are automatically aligned to a customizable grid. This ensures clean spacing and prevents overlapping nodes.+-----------------------------------------------------------------+
+|                       INFINITE CANVAS WORKSPACE                 |
+|                                                                 |
+|   +-----------------------+             +-------------------+   |
+|   |   Character Node:     |             |   Character Node: |   |
+|   |     "Alba" (Active)   |             |  "Caelen" (Active)|   |
+|   +-----------------------+             +-------------------+   |
+|               |                                   |             |
+|               | (Dynamic Visual Connection Line)  |             |
+|               +-----------------==================+             |
+|                                         |                       |
+|                                         v                       |
+|                             +-----------------------+           |
+|                             |  Interactive Label:   |           |
+|                             |      "Cousin of"      |           |
+|                             +-----------------------+           |
++-----------------------------------------------------------------+
+These spatial layouts are supported by interactive connections. In many mapping tools, edges are simple static lines. In this architecture, edges are dynamic visual components that simplify navigation.This dynamic routing is built on several key features:Custom Labels and State Indicators: Edges can render custom labels (e.g., "allied with" or "sub-species of") and interactive buttons directly along the connector line.Auto-Routing and Pathfinding: When a user moves a node, the connected edges automatically adjust their endpoints to the closest side of the target node, preventing lines from overlapping or crossing.Auto-Generated Edges: The system can automatically draw visual connections on the canvas based on metadata links in the node's text (such as wiki links or frontmatter properties).To ensure the canvas is accessible and responsive across both desktop and mobile devices, the interface should follow core design patterns. Touch interactions require a minimum target size of 44×44 points and 8px of spacing to prevent accidental selections. Gesture conflicts can be resolved by using a drag-movement threshold, which distinguishes between panning the canvas and dragging a node. On mobile, pinch-to-zoom and double-tap gestures provide quick navigation, while keyboard shortcuts allow power users to quickly create, link, and organize nodes on desktop.Comparative Technical Analysis of Frontend and Backend FoundationsBuilding a highly visual, custom-designed worldbuilding tool requires choosing a frontend library that can support flexible layout components, handle complex interactions, and scale to render large graphs smoothly. The table below evaluates the leading frontend graph and canvas libraries:Table 2: Comparative Analysis of Frontend Node and Canvas LibrariesSelection CriteriaReact Flow / Svelte FlowCytoscape.jsvis-networkSigma.jsRendering Technology• DOM-based React/Svelte components• SVG overlays for connection lines• HTML5 Canvas-based renderer• Optional WebGL fallback layouts• HTML5 Canvas engine• Standard 2D context renderer• High-performance WebGL• Independent graphology libraryRendering Limit (Nodes)• Up to $2,000$ active DOM nodes• Performance drops with complex custom UI• Up to $100,000$ active canvas nodes• High rendering limits• Up to $10,000$ active nodes• Performance drops as connections grow• Up to $1,000,000$ nodes• Optimized for large networksUI Customization• Excellent: uses standard CSS/Tailwind• Render any React/Svelte component inside nodes• Moderate: uses imperative CSS-like sheets• Limited support for nested elements• Moderate: configured via styling options• Rigid visual node templates• Low: styled via WebGL shaders• High development effort for custom UIInteraction Support• Drag-and-drop, zoom, pan, and minimap• Interactive nodes, toolbars, and resizing• Advanced pathfinding and graph analysis• Interactive selection layouts• Physics-based drag-and-drop layouts• Auto-clustering of nodes• Zoom, pan, and hover events• Custom camera positionsTouch & Mobile Support• Built-in support for touch interactions• Smooth pinch-to-zoom gesturing• Unified touch events for mobile• Fast mobile performance• Basic touch zooming and panning• Dragging can be laggy on mobile• Optimized WebGL touch interactions• Fast multi-touch zoomingFor a highly visual, customizable worldbuilding tool, React Flow (or Svelte Flow) is a strong choice for the frontend. While canvas-based engines like Cytoscape.js or Sigma.js are faster for rendering massive, complex networks, they require much more development effort to build custom UI elements. React Flow renders nodes as standard DOM components. This allows developers to easily design interactive, visually rich cards using standard CSS or Tailwind, and embed complex forms, interactive check-lists, and nested media directly on the canvas.On the backend, storing both spatial canvas positions and deep narrative connections requires a database that supports both document models and graph traversals. The table below compares different backend database technologies for managing narrative graphs:Table 3: Database Technology and Persistence Model ComparisonDatabase SystemPostgreSQLPostgreSQL with JSONBNative Graph (Neo4j)SurrealDBData Model Type• Relational tables with rigid schemas• Semi-structured relational document store• Property graph (nodes, edges, properties)• Multi-model (document, graph, vector)Relationship Performance• Degrades rapidly as join depth increases• Requires complex join tables• Poor performance for deep nested paths• Complex queries and indexing• Logarithmic $O(\log N)$ path lookup• Fast traversals for large graphs• Fast path traversals without joins• Resolves links via record IDsSchema Flexibility• Low: requires migrations for changes• Moderate: schema-flexible document attributes• High: schema-flexible graph attributes• Dynamic: can start schemaless and add constraintsNarrative Suitability• Poor: hard to model dynamic story elements• Moderate: good for text, complex for relationships• High: excellent for character networks• Excellent: combines documents and graphsData Serialization• SQL rows, queries require relational mapping• JSON documents, schema validation required• Graph nodes, requires object mapping• Native JSON documents with direct record linksSurrealDB is highly suitable for visual worldbuilding tools. It integrates document storage with native graph relationships and vector search in a single database. This multi-model approach allows developers to store narrative text as structured JSON documents while using graph paths to link characters, factions, and locations without the complexity of traditional relational databases or specialized graph query languages.To ensure data longevity and prevent vendor lock-in, the system should store visual layouts using the open JSON Canvas 1.0 Specification. This format structures canvas files (.canvas) around two primary arrays: nodes and edges.JSON{
+  "nodes": [
+    {
+      "id": "node_sai_001",
+      "type": "text",
+      "x": 100,
+      "y": 150,
+      "width": 320,
+      "height": 200,
+      "color": "6",
+      "text": "# Sai of Trobia\n\nBorn in the visual sector of *Stardust*, Sai speaks in a distinct, archaic dialect..."
+    },
+    {
+      "id": "node_faction_002",
+      "type": "file",
+      "x": 550,
+      "y": 150,
+      "width": 300,
+      "height": 180,
+      "file": "wiki/factions/trobian_guild.md"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_membership_01",
+      "fromNode": "node_sai_001",
+      "fromSide": "right",
+      "fromEnd": "none",
+      "toNode": "node_faction_002",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "color": "4",
+      "label": "member of"
+    }
+  ]
+}
+By storing canvases in this standard format, developers ensure the worldbuilding data remains portable. Users can easily export their visual maps and narrative graphs, or edit them in other compatible tools like Obsidian.AI-Assisted Ideation and Semantic Context EnginesFor creators who need help with brainstorming, a modern worldbuilding tool can integrate localized AI services to assist with ideation directly on the canvas. Unlike simple text-only chatbots, an infinite canvas allows developers to design visual, context-aware AI workflows.+-----------------------------------------------------------------+
+|                       AI PROMPT CHAINING CANVAS                 |
+|                                                                 |
+|   +--------------------------+                                  |
+|   |   Context Node A:        |                                  |
+|   |   Desert Scarcity System |                                  |
+|   +--------------------------+                                  |
+|                 |                                               |
+|                 | (Upstream Prompt Reference Edge)              |
+|                 v                                               |
+|   +--------------------------+     (Generates)    +-----------+ |
+|   |   AI Prompt Node:        |------------------->| New Card: | |
+|   |   "Generate 3 Factions"  |                    |  Guild of | |
+|   +--------------------------+                    |   Water   | |
+|                                                   +-----------+ |
++-----------------------------------------------------------------+
+By using the canvas layout, visual nodes and directed edges can function as prompt chains and contextual inputs for AI generation:Upstream Context Chaining: When a user triggers AI generation from a prompt node, the system traces the incoming edges back to retrieve context from connected nodes. For example, if a "Generate Factions" prompt is connected to a "Desert Magic System" node, the AI uses the magic system's rules to draft thematic, lore-consistent organizations.Batch and Multi-Path Generation: The AI engine can generate multiple different options from a single prompt, rendering each idea as a separate, connected node on the canvas. This allows creators to visually compare and choose the best fit for their world.Visual File Partitioning: Long blocks of text can be parsed using structural commands like "Split Node by Headings" to automatically break down a long brainstorming session into a structured web of connected nodes.                         +-----------------------+
+                         |     Original Note     |
+                         |  ## History of Trobia |
+                         |  ### The Golden Era   |
+                         |  ### The Great Decay  |
+                         +-----------------------+
+                                     |
+                                     v (Trigger "Split by Headings")
+        +---------------------------------------------------------+
+        |                                                         |
+        v                                                         v
++-----------------------+                         +-----------------------+
+|  Subnode 1:           |                         |  Subnode 2:           |
+|  ## The Golden Era    |                         |  ## The Great Decay   |
++-----------------------+                         +-----------------------+
+To support a smooth visual research and brainstorming workflow, the platform can implement a structured "Research a Topic" pipeline:Table 4: Automated Research Ingestion and Validation EngineStepPhase NameSystem Execution PipelineResulting Visual Artifacts1Ingestion & Parsing• User uploads raw reference documents (PDFs, text files, web articles).• The system extracts text and runs background entity indexing.• Raw files are saved to the project folder.• Initial summary cards are generated on the canvas.2Concept Mapping• The engine scans the text to identify key characters, locations, and events.• A dynamic index is generated to link these terms back to the original documents.• The system generates a categorized canvas layout.• Primary entities are color-coded to highlight connections.3Interactive Ideation• The AI workspace generates suggested research pathways and brainstorming questions.• Users drag selected AI suggestions onto the canvas to expand them.• New conceptual cards are added to the whiteboard.• Visual connection lines are drawn to link them.4Consistency Checks• A background service scans the graph to verify broken links, empty nodes, or rule violations.• The engine flags inconsistencies and suggests fixes.• Issues are highlighted visually using red contrast borders.• Standard properties are updated across the canvas.By combining manual editing with automated semantic indexing, this architecture gives creators the best of both worlds. Users retain full control over how they arrange, connect, and structure their ideas. At the same time, the background AI engine processes the underlying text to help them discover connections, maintain consistency, and brainstorm new ideas without the manual overhead.Domain-Specific Modules and Functional SchemasAn effective worldbuilding engine must translate abstract narrative concepts into practical, visual layout tools. By building dedicated modules on top of the infinite canvas, creators can visually model different systems within their fictional universe.A. The Hierarchical Spatial Atlas (GIS)Geography grounds the narrative, helping creators establish logical travel times and define territorial borders. Rather than relying on simple static images, the map module should act as a multi-layered spatial GIS system.+-----------------------------------------------------------------+
+|                        HIERARCHICAL ATLAS (GIS)                 |
+|                                                                 |
+|   +---------------------------------------------------------+   |
+|   |                 Map Viewport: Continent Level           |   |
+|   |                                                         |   |
+|   |   [Map Pin: Town of Trobia]                             |   |
+|   |         |                                               |   |
+|   +---------|-----------------------------------------------+   |
+|             |                                                   |
+|             v (Zoom In / Double Click)                          |
+|   +---------------------------------------------------------+   |
+|   |                 Map Viewport: Town Level                |   |
+|   |                                                         |   |
+|   |   [Map Pin: Trobian Guildhall]                          |   |
+|   +---------------------------------------------------------+   |
++-----------------------------------------------------------------+
+This map architecture is built on several key features:Coordinate Scaling and Nested Maps: The engine supports high-resolution raster maps, projecting coordinate pins onto the canvas. Users can double-click a location pin to zoom into a nested map, such as navigating from a continent map down to a city layout or a building floor plan.Active Map Pins: Map pins are visual links that reference broader wiki pages, characters, or factions. To keep maps readable, pins can be grouped into custom layers that can be toggled on or off. When too many pins crowd an area, the map automatically groups them into a single, expandable cluster.Dynamic Access Layers: Game masters or lead authors can mark pins and map layers as secret. This allows the creator to hide hidden locations, enemy movements, or plot spoilers when sharing the world map with players or readers.B. Social Topology and Character Network AnalyzerFictional universes are driven by characters and their social interactions. A character network module visualizes these dynamics, displaying actors as nodes and their relationships as edges.+-----------------------------------------------------------------+
+|                  SOCIAL TOPOLOGY AND RELATIONSHIP MAP           |
+|                                                                 |
+|     +-------------------------+     +--------------------+      |
+|     | Character Node:         |     | Character Node:    |      |
+|     |  "Sai of Trobia"        |     |  "Trobian Guild"   |      |
+|     |  Degree Centrality: Low |     |  Degree: High      |      |
+|     +-------------------------+     +--------------------+      |
+|                  |                             |                |
+|                  | (Hostile Relationship Edge) |                |
+|                  +------------=================+                |
+|                                       |                         |
+|                                       v                         |
+|                          +--------------------------+           |
+|                          | Character Node:          |           |
+|                          |  "Caelen" (Rival of Sai) |           |
+|                          +--------------------------+           |
++-----------------------------------------------------------------+
+This network modeling is supported by several key features:Custom Edge Styles: Visual connection lines represent different types of relationships. Users can choose colors, weights, or styles (e.g., solid lines for family, dashed lines for alliances, or red arrows for hostile relationships) to visualize the social landscape at a glance.Social Topology Calculations: The system can analyze the character graph using graph-theory algorithms, highlighting influential figures or connecting threads. It calculates Degree Centrality to identify the most active characters, and Betweenness Centrality to find key bridge characters who link different subplots.Dynamic Timelines: Users can filter the character network using a chronological timeline slider. Dragging the slider shows how alliances, factions, and rivalries evolve across different chapters or historical eras.C. Hard and Soft Magic Systems IntegrationFor genres like fantasy and science fiction, magic systems require logical structures to maintain internal consistency. Users can model their magic systems visually using a Directed Acyclic Graph (DAG). This graph maps how magical energies are sourced, channelled, and expended.+-----------------------+     +-----------------------+     +-----------------------+
+|  Source Node (Energy) |     |  Channeling (Catalyst)|     |  Spell Effect Node    |
+|   "Scarcity of        |---->|   "Anima Soul         |---->|   "Generate           |
+|    Groundwater"       |     |    Catalysis"         |     |    Freshwater"        |
++-----------------------+     +-----------------------+     +-----------------------+
+                                                                        |
+                                                                        v (Enforces Cost)
+                                                            +-----------------------+
+                                                            |  Limit / Cost Node    |
+                                                            |   "Ambient Magical    |
+                                                            |    Decay Radiation"   |
+                                                            +-----------------------+
+This magic system modeling is supported by several key features:The Magic Blueprint Layout: Built on the infinite canvas, this layout uses distinct, color-coded nodes to define the components of a magic system. It maps Source Nodes (energy origins, like scarcity or solar alignment), Transformation Nodes (catalysts or casting requirements, like somatic gestures or specific bloodlines), Spell / Effect Nodes (what the magic can achieve), and Cost / Limit Nodes (the trade-offs, like mental strain or environmental decay).The Triangle of Magic: The system can balance magic rules using three main variables: Ubiquity (how common magic is), Impact (its maximum power or scale), and Cost (the toll of casting). If a user increases a spell's impact without balancing its cost or ubiquity, the system flags the spell as unbalanced.Automated Continuity Verification: The engine checks character actions against these rules. For example, if a writer assigns a character to cast a high-level spell, the system checks if the character has the required catalysts or can meet the spell's cost. If a rule is violated, the canvas highlights the conflict visually, helping authors spot plot holes early.Architectural Integration and Development RoadmapTo build a spatial worldbuilding system, developers can combine a flexible front-end rendering layer with an efficient, multi-model graph database. This architecture is supported by automated background services that run consistency and linting checks across the entire world canvas.+-----------------------------------------------------------------+
+|                       FRONTEND INTERFACE                        |
+|             React Flow UI Engine + Zustand State Store          |
++-----------------------------------------------------------------+
+                                |
+               Bi-directional WebSocket Sync
+                                |
+                                v
++-----------------------------------------------------------------+
+|                    CORE APPLICATION SERVER                      |
+|                  Node.js API & Connection Gateway               |
++-----------------------------------------------------------------+
+          |                                             |
+          v                                             v
++-----------------------+                     +-----------------------+
+|  Database Engine      |                     |  AI Ingestion Agent   |
+|  SurrealDB Document   |<---[Schema Sync]--->|  Markdown & Graph     |
+|   & Graph Storage     |                     |   Consistency Checks  |
++-----------------------+                     +-----------------------+
+State management is handled on the front-end using Zustand. This provides a fast, lightweight state store that handles real-time visual updates and coordinates canvas interactions. The front-end synchronizes state changes with the SurrealDB backend. The database saves these updates in a structured document format while preserving graph edge connections.To help authors keep their worlds consistent, developers can implement an autonomous background validation service. This service runs health checks across the workspace and categorizes its findings:Python# System Validation Algorithm (Conceptual Implementation)
+def run_workspace_health_check(vault_path):
+    issues = {
+        "critical": [],  # Broken references, direct logical contradictions
+        "warning": [],   # Missing metadata fields, unlinked orphan entries
+        "info": []       # Empty folders, unused media assets
+    }
+    
+    # 1. Validate Spatial Relationships
+    for edge in database.get_all_edges():
+        if not database.node_exists(edge.source) or not database.node_exists(edge.target):
+            issues["critical"].append(f"Broken Connection Edge: {edge.id}")
+            
+    # 2. Enforce System Laws (e.g., Magic Conservation Limits)
+    for spell in database.get_nodes_by_type("spell_effect"):
+        cost_edges = database.get_outgoing_edges(spell.id, type="has_cost")
+        if len(cost_edges) == 0:
+            issues["warning"].append(f"Magic Rule Outlier: Spell '{spell.name}' lacks a defined cost.")
+            
+    # 3. Detect Character Network Inconsistencies
+    for character in database.get_nodes_by_type("character"):
+        if not character.has_property("origin_location"):
+            issues["info"].append(f"Missing Backstory Attribute: Character '{character.name}' has no defined origin.")
+            
+    return format_severity_summary(issues)
+The validation service identifies issues like broken references, missing template fields, or logical contradictions, such as a character performing a spell without the required training or traits. To make the tool easier to adopt, developers can structure the rollout of these visual and database modules into four progressive development phases:Table 5: Step-by-Step Technical Implementation PhasesPhaseProject MilestoneFunctional Inclusions & DeliverablesCore TechnologiesPhase 1Infinite Canvas Foundations• Seamless panning, zooming, and dynamic grid alignment.• Core node operations (creation, editing, style presets).• Portability: Import and export standard JSON Canvas files.React Flow, Tailwind CSS, ZustandPhase 2Multi-Model Data Persistence• Bi-directional sync between visual canvas and document data.• Schema-flexible storage for node metadata.• Auto-saving, offline-first local storage, and syncing.SurrealDB, Express Node.js, WebSocketsPhase 3Integrated Geographic Atlas• Coordinate scaling on high-resolution map images.• Active map pins linking directly to wiki cards.• Granular visibility layers and pin grouping.Leaflet.js, React Flow Custom Node TemplatesPhase 4AI Ideation & Consistency• Context-aware AI prompt chaining and visual generation.• Network analysis algorithms (closeness, centrality).• Automated rule verification and plot consistency scanner.Graphology.js, Custom Linting RulesConclusionBuilding a custom visual worldbuilding tool requires combining a highly flexible front-end canvas with an efficient, multi-model database backend. Utilizing libraries like React Flow allows the application to render highly customized, interactive nodes directly as web components. This front-end layout can be serialized using the open JSON Canvas format, ensuring user data remains open and interoperable. On the backend, a multi-model database like SurrealDB stores both unstructured text documents and complex graph relations in a single, unified database.Adding dedicated modules for interactive map layers, social character networks, and structured magic diagrams translates abstract planning into a clean, visual workspace. This modular design helps creators plan, track, and write their stories with greater visual clarity, reducing visual clutter while keeping the underlying narrative elements organized and logically consistent.
