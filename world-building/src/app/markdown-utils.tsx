@@ -331,7 +331,34 @@ export function renderMarkdown(text: string): React.ReactNode[] {
     const line = lines[i].trim();
     
     // Handle lists
-    if (line.startsWith("- ") || line.startsWith("* ")) {
+
+    // Check if it matches a todo list format, but maybe without trailing spaces:
+    const todoUncheckedMatch = line.match(/^(?:- |\* )?\[ \](?: (.*))?$/);
+    const todoCheckedMatch = line.match(/^(?:- |\* )?\[x\](?: (.*))?$/i);
+
+    if (todoUncheckedMatch) {
+      flushTable(i);
+      const itemText = todoUncheckedMatch[1] || "";
+      const html = formatInlineMarkdown(itemText);
+      currentList.push(
+        <li key={`li-${i}`} className="flex items-start gap-2 text-neutral-300 list-none -ml-4">
+          <input type="checkbox" disabled className="mt-1 translate-y-[2px]" />
+          <span dangerouslySetInnerHTML={{ __html: html }} />
+        </li>
+      );
+      continue;
+    } else if (todoCheckedMatch) {
+      flushTable(i);
+      const itemText = todoCheckedMatch[1] || "";
+      const html = formatInlineMarkdown(itemText);
+      currentList.push(
+        <li key={`li-${i}`} className="flex items-start gap-2 text-neutral-500 line-through list-none -ml-4">
+          <input type="checkbox" disabled checked className="mt-1 translate-y-[2px]" />
+          <span dangerouslySetInnerHTML={{ __html: html }} />
+        </li>
+      );
+      continue;
+    } else if (line.startsWith("- ") || line.startsWith("* ")) {
       flushTable(i);
       const itemText = line.slice(2);
       const html = formatInlineMarkdown(itemText);
