@@ -23,8 +23,7 @@ echo.
 
 :: 2. Cambiar al directorio del proyecto e iniciar Vite
 echo [2/2] Accediendo a los archivos de la app...
-d:
-cd "d:\Proyectos\Antigravity Offline\World-Building\world-building"
+cd /d "%~dp0world-building"
 
 echo.
 echo ========================================================

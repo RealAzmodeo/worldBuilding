@@ -72,6 +72,38 @@ Mode: product
 - Skipped checks: Automated tests (the script sits outside Vite bundle and doesn't impact schema or performance checks).
 - Risks: None.
 
+### Iteration 5 — Relative Paths in Windows Startup Script
+- Request: Make batch script paths relative to support project relocation.
+- Task type: Automation scripting and maintenance.
+- User-visible result: Updated iniciar-proyecto.bat to use %~dp0 instead of absolute paths.
+- Source/reference checked: AGENTS.md, workflow.md
+- Reference inputs: None.
+- Docs/contracts read: None.
+- Contract rules applied: None.
+- Files changed: iniciar-proyecto.bat
+- Decision: Replaced the absolute "d:" and "cd" commands with "cd /d "%~dp0world-building"" to make it work relative to the script location.
+- Alternatives rejected: Using standard relative paths like "cd world-building" (fails if the user runs the script from a different current directory context).
+- State/output mapping: None.
+- Verification: Script structure validated manually.
+- Skipped checks: Automated tests (does not affect schema or Vite dev server).
+- Risks: None.
+
+### Iteration 6 — Collapsible Headings and Space Optimization
+- Request: Hide empty placeholder text unless focused, and make headings collapsible (Notion style).
+- Task type: App assembly and usability design.
+- User-visible result: Empty blocks hide their placeholders when not active. H1, H2, and H3 headers show folding chevrons and hide downstream sibling blocks until the next equivalent or higher heading rank.
+- Source/reference checked: AGENTS.md, workflow.md
+- Reference inputs: None.
+- Docs/contracts read: workflow.md
+- Contract rules applied: None.
+- Files changed: markdown-utils.tsx, world-canvas-renderer.tsx
+- Decision: Integrated a focusedBlockId state to track input focus. Re-architected parser to skip empty lines, and serializer to write clean Markdown newlines. Wrote a hierarchical ranking visibleBlocks filter to toggle downstream block visibility on header collapsing.
+- Alternatives rejected: Storing collapsing state in the global markdown text (would bloat markdown syntax). Kept as runtime property in state/JSON canvas block structures.
+- State/output mapping: syncs with workspace.canvasData blocks isCollapsed property.
+- Verification: npm run test passed (214/214 tests).
+- Skipped checks: None.
+- Risks: None.
+
 ## Decisions
 
 ### Renderer

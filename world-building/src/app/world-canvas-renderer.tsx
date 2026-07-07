@@ -1,4 +1,4 @@
-import * as React from "react";
+﻿import * as React from "react";
 import { createPortal } from "react-dom";
 import { useToolcraft } from "@/toolcraft/runtime/react";
 import { createToolcraftPngExportCanvas, shouldIncludeToolcraftPreviewBackground } from "@/toolcraft/runtime";
@@ -40,6 +40,7 @@ export function WorldCanvasRenderer(): React.JSX.Element {
   const [aiTab, setAiTab] = React.useState<"rewrite" | "prompt">("rewrite");
   const [isGenerating, setIsGenerating] = React.useState(false);
   const abortControllerRef = React.useRef<AbortController | null>(null);
+  const [focusedBlockId, setFocusedBlockId] = React.useState<string | null>(null);
 
   // Dynamic model list from Ollama
   const [availableModels, setAvailableModels] = React.useState<string[]>([]);
@@ -68,6 +69,51 @@ export function WorldCanvasRenderer(): React.JSX.Element {
       setModelsLoading(false);
     }
   }, [ollamaEndpoint, selectedAiModel]);
+
+  // Prompt file cache (in-memory per session, keyed by card type)
+  const promptCacheRef = React.useRef<Record<string, { rewrite: string; prompt: string }>>({});
+
+  const loadCardTypePrompt = React.useCallback(async (cardType: string): Promise<{ rewrite: string; prompt: string }> => {
+    const type = cardType || "general";
+    if (promptCacheRef.current[type]) return promptCacheRef.current[type];
+
+    const tryLoad = async (t: string): Promise<string | null> => {
+      try {
+        const res = await fetch(`/prompts/${t}.md`);
+        if (res.ok) return await res.text();
+      } catch (_) {}
+      return null;
+    };
+
+    // Parse ## REWRITE and ## PROMPT sections from the file text
+    const parsePromptFile = (text: string): { rewrite: string; prompt: string } => {
+      // Strip HTML comment lines (<!-- ... -->)
+      const cleaned = text.replace(/<!--[\s\S]*?-->/g, "").trim();
+      const rewriteMatch = cleaned.match(/##\s*REWRITE\s*([\s\S]*?)(?=##\s*PROMPT|$)/i);
+      const promptMatch = cleaned.match(/##\s*PROMPT\s*([\s\S]*?)$/i);
+      return {
+        rewrite: rewriteMatch?.[1]?.trim() || "",
+        prompt: promptMatch?.[1]?.trim() || "",
+      };
+    };
+
+    let text = await tryLoad(type);
+    if (!text && type !== "general") text = await tryLoad("general");
+
+    if (text) {
+      const parsed = parsePromptFile(text);
+      promptCacheRef.current[type] = parsed;
+      return parsed;
+    }
+
+    // Hardcoded fallback if no files are available at all
+    const fallback = {
+      rewrite: "Eres un escritor experto en worldbuilding y narrativa literaria. Mejora la redacción del siguiente texto para que suene más profesional e inmersivo. Mantén el formato Markdown y el idioma español.",
+      prompt: "Eres un escritor experto en worldbuilding y narrativa literaria. Escribe un texto creativo en español basado en la consigna del usuario. Usa formato Markdown cuando sea apropiado.",
+    };
+    promptCacheRef.current[type] = fallback;
+    return fallback;
+  }, []);
 
   const middlePanRef = React.useRef<{
     startX: number;
@@ -254,28 +300,35 @@ export function WorldCanvasRenderer(): React.JSX.Element {
   "tags": ["<etiqueta1>", "<etiqueta2>"]
 }`;
 
+    // Load prompt instructions from the card type's file
+    const cardTypeKey = (card.cardType || card.type || "general").toLowerCase();
+    const promptInstructions = await loadCardTypePrompt(cardTypeKey);
+
     let finalPrompt = "";
     if (actionType === "rewrite") {
-      finalPrompt = `Eres un asistente de worldbuilding y redacción literaria. Tienes el siguiente contenido de una tarjeta llamada "${card.title || 'Sin título'}" de tipo "${card.type || 'genérico'}".
+      const baseInstructions = promptInstructions.rewrite || "Mejora la redacción del siguiente texto.";
+      finalPrompt = `${baseInstructions}
+
+Tarjeta: "${card.title || 'Sin título'}" (tipo: ${card.cardType || card.type || 'general'})
 
 Contenido actual:
 ${card.text || "(sin contenido)"}
-
-Mejora la redacción para que suene más profesional, inmersivo y literario. Mantén el idioma español y formato Markdown. Propón también un título mejorado y etiquetas relevantes.${existingTagsHint}
+${existingTagsHint}
 
 ${structuredInstructions}`;
     } else {
-      finalPrompt = `Eres un asistente de worldbuilding y redacción literaria. El usuario quiere crear contenido para una tarjeta de tipo "${card.type || 'genérico'}" llamada "${card.title || 'Sin título'}".
+      const baseInstructions = promptInstructions.prompt || "Escribe contenido de worldbuilding según la consigna.";
+      finalPrompt = `${baseInstructions}
 
+Tarjeta: "${card.title || 'Sin título'}" (tipo: ${card.cardType || card.type || 'general'})
 Consigna del usuario: ${aiPrompt}
-
-Escribe el contenido en español usando formato Markdown (párrafos, listas, encabezados si corresponde). Propón también un título adecuado y etiquetas relevantes.${existingTagsHint}
+${existingTagsHint}
 
 ${structuredInstructions}`;
     }
 
     const systemMsg = ollamaSystemPrompt.trim() ||
-      "Eres un asistente experto en worldbuilding y narrativa literaria. Siempre respondes en español y usas formato Markdown en los textos.";
+      "Eres un asistente experto en worldbuilding y narrativa literaria. Siempre respondes en español y usas formato Markdown en los textos. Cuando se te pide un JSON, respondes SOLO con el objeto JSON, sin texto adicional.";
 
     const base = ollamaEndpoint.replace(/\/+$/, "");
 
@@ -455,12 +508,20 @@ ${structuredInstructions}`;
     } catch (err) {}
 
     const isGroup = card.cardType === "group";
+    // If the card is auto-sized, read actual rendered height from the DOM
+    let origHeight = card.height || (isGroup ? 400 : 200);
+    if (!card.isResized && !isGroup) {
+      const nodeEl = document.querySelector(`[data-node-id="${card.id}"]`);
+      if (nodeEl) {
+        origHeight = (nodeEl as HTMLElement).getBoundingClientRect().height / scale;
+      }
+    }
     setResizeNode({
       id: card.id,
       startX: e.clientX,
       startY: e.clientY,
       origWidth: card.width || (isGroup ? 600 : 320),
-      origHeight: card.height || (isGroup ? 400 : 200),
+      origHeight,
     });
   };
 
@@ -481,7 +542,7 @@ ${structuredInstructions}`;
 
     const nodes = canvasData.nodes.map((n) => {
       if (n.id === resizeNode.id) {
-        return { ...n, width: targetWidth, height: targetHeight };
+        return { ...n, width: targetWidth, height: targetHeight, isResized: true };
       }
       return n;
     });
@@ -509,6 +570,7 @@ ${structuredInstructions}`;
       history: "record",
     });
   };
+
 
   // Context menu operations
   const createCardAtPos = (x: number, y: number, cardType: string) => {
@@ -1437,7 +1499,9 @@ ${structuredInstructions}`;
           const isSelected = card.id === selectedCardId;
           const isGroup = card.cardType === "group";
           const cardWidth = card.width || (isGroup ? 600 : 320);
-          const cardHeight = card.height || (isGroup ? 400 : 200);
+          // For groups, always use explicit height. For regular cards, use auto unless manually resized.
+          const isManuallyResized = isGroup || card.isResized;
+          const cardHeight = isManuallyResized ? (card.height || (isGroup ? 400 : 200)) : undefined;
 
           // Compute style
           const cardAccent = card.color || getCategoryColor(card.cardType || "general");
@@ -1446,10 +1510,10 @@ ${structuredInstructions}`;
             <div
               key={card.id}
               data-node-id={card.id}
-              className={`absolute pointer-events-auto rounded-lg transition-all duration-300 flex flex-col overflow-hidden ${
+              className={`absolute pointer-events-auto rounded-lg transition-all duration-300 flex flex-col ${
                 isGroup
-                  ? "border-2 border-dashed border-neutral-600/40"
-                  : "border shadow-xl"
+                  ? "border-2 border-dashed border-neutral-600/40 overflow-hidden"
+                  : isManuallyResized ? "border shadow-xl overflow-hidden" : "border shadow-xl"
               } ${
                 flashingCardId === card.id
                   ? "ring-4 ring-amber-500 shadow-2xl scale-105 z-30"
@@ -1461,7 +1525,9 @@ ${structuredInstructions}`;
                 left: card.x + 10000,
                 top: card.y + 10000,
                 width: cardWidth,
-                height: cardHeight,
+                ...(isManuallyResized
+                  ? { height: cardHeight }
+                  : { height: "auto", minHeight: 200, maxHeight: 600 }),
                 backgroundColor: isGroup ? `${themeStyles.bg}60` : themeStyles.cardBg,
                 borderColor: isSelected
                   ? "var(--link)"
@@ -1650,6 +1716,9 @@ ${structuredInstructions}`;
                                   setAiPrompt("");
                                   setAiTab("rewrite");
                                   fetchAvailableModels();
+                                  // Clear cached prompt for this card type so edited files are always reloaded
+                                  const typeKey = (card.cardType || card.type || "general").toLowerCase();
+                                  delete promptCacheRef.current[typeKey];
                                 }
                               }}
                               className={`p-1 rounded transition cursor-pointer flex items-center justify-center ${
@@ -2152,22 +2221,534 @@ ${structuredInstructions}`;
                             );
                           };
 
-                          const visibleBlocks: { block: Block; originalIndex: number }[] = [];
-                          let hideLevel: number | null = null;
-                          
-                          blocks.forEach((b, bIdx) => {
-                            if (hideLevel !== null) {
-                              if ((b.level || 0) > hideLevel) {
-                                return;
-                              } else {
-                                hideLevel = null;
+
+                          // ── Block Tree Builder ──────────────────────────────────────────────
+                          interface TreeNode {
+                            block: Block;
+                            originalIndex: number;
+                            children: TreeNode[];
+                          }
+
+                          const getHeadingRank = (type: string): number => {
+                            if (type === "heading1") return 1;
+                            if (type === "heading2") return 2;
+                            if (type === "heading3") return 3;
+                            return 99;
+                          };
+
+                          const getLastDescendantIndex = (node: TreeNode): number => {
+                            if (node.children.length === 0) return node.originalIndex;
+                            return getLastDescendantIndex(node.children[node.children.length - 1]);
+                          };
+
+                          // Build a tree from the flat blocks array
+                          const treeNodes: TreeNode[] = blocks.map((block, idx) => ({
+                            block,
+                            originalIndex: idx,
+                            children: [],
+                          }));
+
+                          const roots: TreeNode[] = [];
+                          for (let i = 0; i < treeNodes.length; i++) {
+                            const node = treeNodes[i];
+                            const rank = getHeadingRank(node.block.type);
+                            const level = node.block.level || 0;
+
+                            let parentNode: TreeNode | null = null;
+
+                            // Walk backwards looking for the closest heading or toggle parent
+                            for (let j = i - 1; j >= 0; j--) {
+                              const potential = treeNodes[j];
+                              const pRank = getHeadingRank(potential.block.type);
+                              const pLevel = potential.block.level || 0;
+
+                              // Current block is a non-heading: attach to closest heading with lower rank
+                              if (rank === 99 && pRank < 99) {
+                                parentNode = potential;
+                                break;
                               }
+                              // Current block is a heading: attach to a heading with strictly lower rank
+                              if (rank < 99 && pRank < rank) {
+                                parentNode = potential;
+                                break;
+                              }
+                              // Toggle nesting: attach to a toggle with lower indent level
+                              if (potential.block.type === "toggle" && level > pLevel) {
+                                parentNode = potential;
+                                break;
+                              }
+                              // Stop searching once we hit a block of equal or lower heading rank
+                              if (pRank <= rank && pRank < 99) break;
                             }
-                            visibleBlocks.push({ block: b, originalIndex: bIdx });
-                            if (b.type === "toggle" && b.isCollapsed) {
-                              hideLevel = b.level || 0;
+
+                            if (parentNode) {
+                              parentNode.children.push(node);
+                            } else {
+                              roots.push(node);
                             }
-                          });
+                          }
+
+                          // ── Recursive Block Renderer ─────────────────────────────────────────
+                          const renderBlockContent = (block: Block, originalIndex: number): React.ReactNode => (
+                            <>
+                              {block.type === "paragraph" && (
+                                <textarea
+                                  id={`block-input-${block.id}`}
+                                  value={block.content || ""}
+                                  onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                  onFocus={() => setFocusedBlockId(block.id)}
+                                  onBlur={() => setFocusedBlockId(null)}
+                                  placeholder={focusedBlockId === block.id ? "Type text or use '+' to insert different block styles..." : ""}
+                                  style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                  className="w-full bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded resize-none min-h-[1.5em] leading-relaxed transition"
+                                  rows={Math.max(3, (block.content || "").split("\n").length)}
+                                />
+                              )}
+                              {block.type === "heading1" && (
+                                <div className="flex items-center gap-1.5 w-full pl-0 text-left">
+                                  <button
+                                    onPointerDown={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      updateBlock(originalIndex, { isCollapsed: !block.isCollapsed });
+                                    }}
+                                    className="opacity-40 hover:opacity-100 p-0.5 rounded hover:bg-neutral-800 text-neutral-450 transition cursor-pointer flex items-center justify-center shrink-0 w-4 h-4"
+                                    title={block.isCollapsed ? "Expand section" : "Collapse section"}
+                                  >
+                                    {block.isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                                  </button>
+                                  <input
+                                    id={`block-input-${block.id}`}
+                                    type="text"
+                                    value={block.content || ""}
+                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    onFocus={() => setFocusedBlockId(block.id)}
+                                    onBlur={() => {
+                                      setFocusedBlockId(null);
+                                      dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify(canvasData, null, 2), history: "record" });
+                                    }}
+                                    placeholder="Heading 1"
+                                    style={{ fontSize: `${18 * globalFontScale}px`, color: themeStyles.text }}
+                                    className="flex-1 bg-transparent font-bold border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded leading-tight transition"
+                                  />
+                                </div>
+                              )}
+                              {block.type === "heading2" && (
+                                <div className="flex items-center gap-1.5 w-full pl-0 text-left">
+                                  <button
+                                    onPointerDown={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      updateBlock(originalIndex, { isCollapsed: !block.isCollapsed });
+                                    }}
+                                    className="opacity-40 hover:opacity-100 p-0.5 rounded hover:bg-neutral-800 text-neutral-450 transition cursor-pointer flex items-center justify-center shrink-0 w-4 h-4"
+                                    title={block.isCollapsed ? "Expand section" : "Collapse section"}
+                                  >
+                                    {block.isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                                  </button>
+                                  <input
+                                    id={`block-input-${block.id}`}
+                                    type="text"
+                                    value={block.content || ""}
+                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    onFocus={() => setFocusedBlockId(block.id)}
+                                    onBlur={() => {
+                                      setFocusedBlockId(null);
+                                      dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify(canvasData, null, 2), history: "record" });
+                                    }}
+                                    placeholder="Heading 2"
+                                    style={{ fontSize: `${15 * globalFontScale}px`, color: themeStyles.text }}
+                                    className="flex-1 bg-transparent font-bold border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded leading-tight transition"
+                                  />
+                                </div>
+                              )}
+                              {block.type === "heading3" && (
+                                <div className="flex items-center gap-1.5 w-full pl-0 text-left">
+                                  <button
+                                    onPointerDown={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      updateBlock(originalIndex, { isCollapsed: !block.isCollapsed });
+                                    }}
+                                    className="opacity-40 hover:opacity-100 p-0.5 rounded hover:bg-neutral-800 text-neutral-450 transition cursor-pointer flex items-center justify-center shrink-0 w-4 h-4"
+                                    title={block.isCollapsed ? "Expand section" : "Collapse section"}
+                                  >
+                                    {block.isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                                  </button>
+                                  <input
+                                    id={`block-input-${block.id}`}
+                                    type="text"
+                                    value={block.content || ""}
+                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    onFocus={() => setFocusedBlockId(block.id)}
+                                    onBlur={() => {
+                                      setFocusedBlockId(null);
+                                      dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify(canvasData, null, 2), history: "record" });
+                                    }}
+                                    placeholder="Heading 3"
+                                    style={{ fontSize: `${13 * globalFontScale}px`, color: themeStyles.text }}
+                                    className="flex-1 bg-transparent font-bold border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded leading-tight transition"
+                                  />
+                                </div>
+                              )}
+                              {block.type === "list-item" && (
+                                <div className="flex items-center gap-1.5 w-full pl-1 text-left">
+                                  <span className="text-link font-bold text-sm select-none">•</span>
+                                  <input
+                                    id={`block-input-${block.id}`}
+                                    type="text"
+                                    value={block.content || ""}
+                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    onFocus={() => setFocusedBlockId(block.id)}
+                                    onBlur={() => setFocusedBlockId(null)}
+                                    placeholder={focusedBlockId === block.id ? "List item..." : ""}
+                                    style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                    className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
+                                  />
+                                </div>
+                              )}
+                              {block.type === "numbered-list" && (
+                                <div className="flex items-center gap-1.5 w-full pl-1 text-left">
+                                  <span className="text-neutral-500 font-bold text-xs select-none min-w-[15px]">{block.index || 1}.</span>
+                                  <input
+                                    id={`block-input-${block.id}`}
+                                    type="text"
+                                    value={block.content || ""}
+                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    onFocus={() => setFocusedBlockId(block.id)}
+                                    onBlur={() => setFocusedBlockId(null)}
+                                    placeholder={focusedBlockId === block.id ? "List item..." : ""}
+                                    style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                    className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
+                                  />
+                                </div>
+                              )}
+                              {block.type === "todo" && (
+                                <div className="flex items-center gap-2 w-full pl-1 text-left">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!block.checked}
+                                    onChange={(e) => updateBlock(originalIndex, { checked: e.target.checked })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    className="w-3.5 h-3.5 rounded border-neutral-600 bg-neutral-900 text-link focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                                  />
+                                  <input
+                                    id={`block-input-${block.id}`}
+                                    type="text"
+                                    value={block.content || ""}
+                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    onFocus={() => setFocusedBlockId(block.id)}
+                                    onBlur={() => setFocusedBlockId(null)}
+                                    placeholder={focusedBlockId === block.id ? "To-do..." : ""}
+                                    style={{
+                                      fontSize: `${12 * globalFontScale}px`,
+                                      color: block.checked ? themeStyles.textMuted : themeStyles.text,
+                                      textDecoration: block.checked ? "line-through" : "none",
+                                      opacity: block.checked ? 0.6 : 1,
+                                    }}
+                                    className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
+                                  />
+                                </div>
+                              )}
+                              {block.type === "toggle" && (
+                                <div className="flex items-center gap-1 w-full pl-1 text-left">
+                                  <button
+                                    onPointerDown={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      updateBlock(originalIndex, { isCollapsed: !block.isCollapsed });
+                                    }}
+                                    className="text-neutral-500 hover:text-neutral-300 flex items-center justify-center cursor-pointer select-none"
+                                  >
+                                    {block.isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                                  </button>
+                                  <input
+                                    id={`block-input-${block.id}`}
+                                    type="text"
+                                    value={block.content || ""}
+                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    onFocus={() => setFocusedBlockId(block.id)}
+                                    onBlur={() => setFocusedBlockId(null)}
+                                    placeholder={focusedBlockId === block.id ? "Toggle list..." : ""}
+                                    style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                    className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded font-semibold transition"
+                                  />
+                                </div>
+                              )}
+                              {block.type === "divider" && (
+                                <div className="w-full py-2 cursor-default select-none pointer-events-none">
+                                  <hr style={{ borderTop: `1px solid ${theme === "light" ? "rgba(0, 0, 0, 0.15)" : "rgba(255, 255, 255, 0.2)"}` }} className="w-full" />
+                                </div>
+                              )}
+                              {block.type === "callout" && (
+                                <div
+                                  className="w-full flex gap-2 items-start p-2 rounded border shadow-sm my-0.5 text-left"
+                                  style={{ backgroundColor: theme === "light" ? "#fbfbfa" : "#17171760", borderColor: themeStyles.border }}
+                                >
+                                  <input
+                                    type="text"
+                                    maxLength={2}
+                                    value={block.emoji || "💡"}
+                                    onChange={(e) => updateBlock(originalIndex, { emoji: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    className="w-5 text-center bg-transparent border-none p-0 text-xs focus:outline-none cursor-pointer"
+                                    title="Edit Emoji"
+                                  />
+                                  <input
+                                    id={`block-input-${block.id}`}
+                                    type="text"
+                                    value={block.content || ""}
+                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    placeholder="Callout note..."
+                                    style={{ fontSize: `${11 * globalFontScale}px`, color: themeStyles.text }}
+                                    className="flex-1 bg-transparent border-none p-0.5 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
+                                  />
+                                </div>
+                              )}
+                              {block.type === "code" && (
+                                <div
+                                  className="w-full rounded border flex flex-col overflow-hidden my-1 shadow-sm font-mono text-[9px] text-left"
+                                  style={{ backgroundColor: "#0d0d0d80", borderColor: themeStyles.border }}
+                                >
+                                  <div className="flex items-center justify-between px-2 py-1 border-b border-neutral-800 text-[8px] uppercase tracking-wider text-neutral-500 font-bold">
+                                    <span>Code Block</span>
+                                    <select
+                                      value={block.language || "javascript"}
+                                      onChange={(e) => updateBlock(originalIndex, { language: e.target.value })}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      className="bg-transparent border-none text-[8px] text-neutral-400 font-bold focus:outline-none cursor-pointer"
+                                    >
+                                      <option value="javascript">JS</option>
+                                      <option value="typescript">TS</option>
+                                      <option value="css">CSS</option>
+                                      <option value="html">HTML</option>
+                                      <option value="markdown">MD</option>
+                                      <option value="python">PY</option>
+                                    </select>
+                                  </div>
+                                  <textarea
+                                    id={`block-input-${block.id}`}
+                                    value={block.content || ""}
+                                    onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    placeholder="// Write code here..."
+                                    className="w-full min-h-[50px] bg-transparent border-none p-2 focus:outline-none font-mono text-neutral-250 resize-y"
+                                    style={{ color: "#a3e635" }}
+                                  />
+                                </div>
+                              )}
+                              {block.type === "image" && (
+                                <div className="group/media relative w-full flex flex-col gap-1 my-1 text-left">
+                                  {block.url ? (
+                                    <div className="relative overflow-hidden rounded border max-w-full" style={{ borderColor: themeStyles.border }}>
+                                      <img src={block.url} alt={block.caption || ""} className="w-full object-contain max-h-40" />
+                                      <button
+                                        onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); updateBlock(originalIndex, { url: "", caption: "" }); }}
+                                        className="absolute top-2 right-2 px-2 py-0.5 rounded bg-neutral-900/85 hover:bg-rose-500 text-white text-[8px] font-bold shadow opacity-0 group-hover/media:opacity-100 transition cursor-pointer"
+                                      >Change Image</button>
+                                    </div>
+                                  ) : (
+                                    <div className="border border-dashed rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-center" style={{ borderColor: themeStyles.border, backgroundColor: theme === "light" ? "#fbfbfa" : "#0d0d0d20" }}>
+                                      <div className="text-[10px] text-neutral-500 font-medium flex items-center gap-1.5"><Image size={12} /> Add Image Block</div>
+                                      <div className="flex gap-2 items-center w-full justify-center flex-wrap">
+                                        <label onPointerDown={(e) => e.stopPropagation()} className="px-2.5 py-1 rounded bg-link hover:bg-link/90 text-white font-bold text-[9px] cursor-pointer text-center select-none shadow">
+                                          Upload Image
+                                          <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) { const reader = new FileReader(); reader.onload = (event) => updateBlock(originalIndex, { url: event.target?.result as string, caption: file.name }); reader.readAsDataURL(file); }
+                                          }} />
+                                        </label>
+                                        <span className="text-neutral-500 text-[9px] italic">or</span>
+                                        <input type="text" placeholder="Paste URL..." className="border rounded px-2 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-link w-32" style={{ backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.text }} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") updateBlock(originalIndex, { url: e.currentTarget.value }); }} />
+                                      </div>
+                                    </div>
+                                  )}
+                                  {block.url && (
+                                    <input type="text" placeholder="Write Caption..." value={block.caption || ""} onChange={(e) => updateBlock(originalIndex, { caption: e.target.value })} onPointerDown={(e) => e.stopPropagation()} className="w-full bg-transparent text-center text-[9px] text-neutral-500 focus:outline-none focus:text-neutral-300 transition italic" />
+                                  )}
+                                </div>
+                              )}
+                              {block.type === "video" && (
+                                <div className="group/media relative w-full flex flex-col gap-1 my-1 text-left">
+                                  {block.url ? (
+                                    <div className="relative overflow-hidden rounded border max-w-full" style={{ borderColor: themeStyles.border }}>
+                                      <video controls src={block.url} className="w-full max-h-40 rounded" />
+                                      <button onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); updateBlock(originalIndex, { url: "", caption: "" }); }} className="absolute top-2 right-2 px-2 py-0.5 rounded bg-neutral-900/85 hover:bg-rose-500 text-white text-[8px] font-bold shadow opacity-0 group-hover/media:opacity-100 transition cursor-pointer">Change Video</button>
+                                    </div>
+                                  ) : (
+                                    <div className="border border-dashed rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-center" style={{ borderColor: themeStyles.border, backgroundColor: theme === "light" ? "#fbfbfa" : "#0d0d0d20" }}>
+                                      <div className="text-[10px] text-neutral-500 font-medium flex items-center gap-1.5"><Video size={12} /> Add Video Block</div>
+                                      <div className="flex gap-2 items-center w-full justify-center flex-wrap">
+                                        <label onPointerDown={(e) => e.stopPropagation()} className="px-2.5 py-1 rounded bg-link hover:bg-link/90 text-white font-bold text-[9px] cursor-pointer text-center select-none shadow">
+                                          Upload Video
+                                          <input type="file" accept="video/*" className="hidden" onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) { const reader = new FileReader(); reader.onload = (event) => updateBlock(originalIndex, { url: event.target?.result as string, caption: file.name }); reader.readAsDataURL(file); }
+                                          }} />
+                                        </label>
+                                        <span className="text-neutral-500 text-[9px] italic">or</span>
+                                        <input type="text" placeholder="Paste URL..." className="border rounded px-2 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-link w-32" style={{ backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.text }} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") updateBlock(originalIndex, { url: e.currentTarget.value }); }} />
+                                      </div>
+                                    </div>
+                                  )}
+                                  {block.url && (
+                                    <input type="text" placeholder="Write Caption..." value={block.caption || ""} onChange={(e) => updateBlock(originalIndex, { caption: e.target.value })} onPointerDown={(e) => e.stopPropagation()} className="w-full bg-transparent text-center text-[9px] text-neutral-500 focus:outline-none focus:text-neutral-300 transition italic" />
+                                  )}
+                                </div>
+                              )}
+                              {block.type === "embed" && (
+                                <div className="group/media relative w-full flex flex-col gap-1 my-1 text-left">
+                                  {block.url ? (
+                                    <div className="relative overflow-hidden rounded border h-40 w-full" style={{ borderColor: themeStyles.border }}>
+                                      <iframe src={block.url} className="w-full h-full border-none rounded" />
+                                      <button onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); updateBlock(originalIndex, { url: "" }); }} className="absolute top-2 right-2 px-2 py-0.5 rounded bg-neutral-900/85 hover:bg-rose-500 text-white text-[8px] font-bold shadow opacity-0 group-hover/media:opacity-100 transition cursor-pointer">Remove Embed</button>
+                                    </div>
+                                  ) : (
+                                    <div className="border border-dashed rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-center" style={{ borderColor: themeStyles.border, backgroundColor: theme === "light" ? "#fbfbfa" : "#0d0d0d20" }}>
+                                      <div className="text-[10px] text-neutral-500 font-medium flex items-center gap-1.5"><ExternalLink size={12} /> Add Web Embed</div>
+                                      <div className="w-full max-w-xs">
+                                        <input type="text" placeholder="Paste Embed URL..." className="w-full border rounded px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-link" style={{ backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.text }} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") updateBlock(originalIndex, { url: e.currentTarget.value }); }} />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {block.type === "table" && (
+                                <div className="border rounded overflow-hidden my-1 shadow-sm text-left" style={{ backgroundColor: theme === "light" ? "#fdfbf7" : "#0d0d0d60", borderColor: themeStyles.border }}>
+                                  <table className="w-full border-collapse text-[10px]">
+                                    <thead>
+                                      <tr className="border-b" style={{ backgroundColor: theme === "light" ? "#f4eedf" : "#17171780", borderColor: themeStyles.border }}>
+                                        {(block.headers || []).map((h, cidx) => (
+                                          <th key={cidx} className="p-1 border-r" style={{ borderColor: themeStyles.border }}>
+                                            <input value={h} onChange={(e) => updateTableCell(originalIndex, "header", 0, cidx, e.target.value)} onPointerDown={(e) => e.stopPropagation()} style={{ color: themeStyles.text }} className="w-full bg-transparent font-bold text-center border-none p-1 focus:bg-neutral-800/10 focus:outline-none focus:ring-1 focus:ring-link rounded transition" />
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {(block.rows || []).map((row, ridx) => (
+                                        <tr key={ridx} className="border-b" style={{ borderColor: themeStyles.border }}>
+                                          {row.map((cell, cidx) => (
+                                            <td key={cidx} className="p-1 border-r" style={{ borderColor: themeStyles.border }}>
+                                              <input value={cell} onChange={(e) => updateTableCell(originalIndex, "row", ridx, cidx, e.target.value)} onPointerDown={(e) => e.stopPropagation()} style={{ color: themeStyles.text }} className="w-full bg-transparent border-none p-1 focus:bg-neutral-800/10 focus:outline-none focus:ring-1 focus:ring-link rounded text-center transition" />
+                                            </td>
+                                          ))}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                  <div className="flex gap-2 p-1 text-[8px] justify-end border-t" style={{ backgroundColor: theme === "light" ? "#f4eedf80" : "#17171740", borderColor: themeStyles.border }}>
+                                    <button onPointerDown={(e) => { e.stopPropagation(); addTableRow(originalIndex); }} className="px-1.5 py-0.5 bg-neutral-800/60 hover:bg-link hover:text-white rounded border text-neutral-300 font-bold transition cursor-pointer" style={{ borderColor: themeStyles.border }}>+ Row</button>
+                                    <button onPointerDown={(e) => { e.stopPropagation(); addTableColumn(originalIndex); }} className="px-1.5 py-0.5 bg-neutral-800/60 hover:bg-link hover:text-white rounded border text-neutral-300 font-bold transition cursor-pointer" style={{ borderColor: themeStyles.border }}>+ Col</button>
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          );
+
+                          const renderTreeNode = (node: TreeNode): React.ReactNode => {
+                            const { block, originalIndex, children } = node;
+                            const hasChildren = children.length > 0;
+                            const isCollapsible = block.type === "heading1" || block.type === "heading2" || block.type === "heading3" || block.type === "toggle";
+                            const isCollapsed = !!block.isCollapsed;
+
+                            // Determine inserter zone target: if collapsed, insert after all children; otherwise after this block
+                            const inserterAfterIndex = isCollapsed && hasChildren
+                              ? getLastDescendantIndex(node) + 1
+                              : originalIndex + 1;
+
+                            return (
+                              <div key={block.id} className="flex flex-col w-full text-left">
+                                {/* Block row */}
+                                <div
+                                  className="group/block relative flex items-start gap-1 p-1 rounded hover:bg-neutral-500/5 transition duration-100 w-full"
+                                  data-block-id={block.id}
+                                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const fromIdxStr = e.dataTransfer.getData("text/plain");
+                                    const fromIdx = parseInt(fromIdxStr);
+                                    const toIdx = originalIndex;
+                                    if (!isNaN(fromIdx) && fromIdx !== toIdx) {
+                                      const newBlocks = [...blocks];
+                                      const [moved] = newBlocks.splice(fromIdx, 1);
+                                      newBlocks.splice(toIdx, 0, moved);
+                                      const newText = serializeBlocksToText(newBlocks);
+                                      const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, text: newText } : n);
+                                      dispatch({ type: "controls.setValue", target: "workspace.canvasData", value: JSON.stringify({ ...canvasData, nodes }, null, 2), history: "record" });
+                                    }
+                                  }}
+                                >
+                                  {/* Drag handle */}
+                                  <div
+                                    draggable={true}
+                                    onDragStart={(e) => {
+                                      e.stopPropagation();
+                                      e.dataTransfer.setData("text/plain", originalIndex.toString());
+                                      const blockEl = document.querySelector(`[data-block-id="${block.id}"]`);
+                                      if (blockEl) e.dataTransfer.setDragImage(blockEl, 10, 10);
+                                    }}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    className="opacity-0 group-hover/block:opacity-100 flex items-center justify-center cursor-grab active:cursor-grabbing p-1 rounded text-neutral-500 hover:bg-neutral-500/10 transition self-center mr-1 h-5 w-4"
+                                    title="Drag to reorder block"
+                                  >
+                                    <div className="grid grid-cols-2 gap-0.5 w-2">
+                                      <div className="w-0.5 h-0.5 bg-current rounded-full" />
+                                      <div className="w-0.5 h-0.5 bg-current rounded-full" />
+                                      <div className="w-0.5 h-0.5 bg-current rounded-full" />
+                                      <div className="w-0.5 h-0.5 bg-current rounded-full" />
+                                      <div className="w-0.5 h-0.5 bg-current rounded-full" />
+                                      <div className="w-0.5 h-0.5 bg-current rounded-full" />
+                                    </div>
+                                  </div>
+                                  {/* Block editor */}
+                                  <div className="flex-1 min-w-0">
+                                    {renderBlockContent(block, originalIndex)}
+                                  </div>
+                                  {/* Delete button */}
+                                  <div className="opacity-0 group-hover/block:opacity-100 flex items-center justify-center p-0.5 rounded text-neutral-500 hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer self-center ml-1">
+                                    <button
+                                      onPointerDown={(e) => { e.stopPropagation(); deleteBlock(originalIndex); }}
+                                      title="Delete Block"
+                                      className="text-neutral-500 hover:text-rose-500 transition cursor-pointer"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Inserter zone after this block (or after all children if collapsed) */}
+                                {renderInserterZone(inserterAfterIndex)}
+
+                                {/* Children container - only shown when expanded */}
+                                {hasChildren && isCollapsible && !isCollapsed && (
+                                  <div className="border-l-2 pl-3 ml-3 mt-0.5 flex flex-col gap-0" style={{ borderColor: `${themeStyles.border}` }}>
+                                    {children.map((childNode) => renderTreeNode(childNode))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          };
 
                           return (
                             <div className="flex-1 p-3 flex flex-col pointer-events-auto overflow-hidden">
@@ -2180,551 +2761,11 @@ ${structuredInstructions}`;
                                 }}
                               >
                                 {renderInserterZone(0)}
-                                {visibleBlocks.map(({ block, originalIndex }, idx) => {
-                                  const indentStyle = { marginLeft: `${(block.level || 0) * 16}px` };
-                                  return (
-                                    <div key={block.id} className="flex flex-col w-full text-left">
-                                      <div
-                                        style={indentStyle}
-                                        className="group/block relative flex items-start gap-1 p-1 rounded hover:bg-neutral-500/5 transition duration-100 w-full"
-                                        data-block-id={block.id}
-                                        onDragOver={(e) => {
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                        }}
-                                        onDrop={(e) => {
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                          const fromIdxStr = e.dataTransfer.getData("text/plain");
-                                          const fromIdx = parseInt(fromIdxStr);
-                                          const toIdx = originalIndex;
-                                          if (!isNaN(fromIdx) && fromIdx !== toIdx) {
-                                            const newBlocks = [...blocks];
-                                            const [moved] = newBlocks.splice(fromIdx, 1);
-                                            newBlocks.splice(toIdx, 0, moved);
-                                            const newText = serializeBlocksToText(newBlocks);
-                                            const nodes = canvasData.nodes.map(n => n.id === card.id ? { ...n, text: newText } : n);
-                                            dispatch({
-                                              type: "controls.setValue",
-                                              target: "workspace.canvasData",
-                                              value: JSON.stringify({ ...canvasData, nodes }, null, 2),
-                                              history: "record"
-                                            });
-                                          }
-                                        }}
-                                      >
-                                        <div
-                                          draggable={true}
-                                          onDragStart={(e) => {
-                                            e.stopPropagation();
-                                            e.dataTransfer.setData("text/plain", originalIndex.toString());
-                                            const blockEl = document.querySelector(`[data-block-id="${block.id}"]`);
-                                            if (blockEl) {
-                                              e.dataTransfer.setDragImage(blockEl, 10, 10);
-                                            }
-                                          }}
-                                          onPointerDown={(e) => e.stopPropagation()}
-                                          className="opacity-0 group-hover/block:opacity-100 flex items-center justify-center cursor-grab active:cursor-grabbing p-1 rounded text-neutral-500 hover:bg-neutral-500/10 transition self-center mr-1 h-5 w-4"
-                                          title="Drag to reorder block"
-                                        >
-                                          <div className="grid grid-cols-2 gap-0.5 w-2">
-                                            <div className="w-0.5 h-0.5 bg-current rounded-full" />
-                                            <div className="w-0.5 h-0.5 bg-current rounded-full" />
-                                            <div className="w-0.5 h-0.5 bg-current rounded-full" />
-                                            <div className="w-0.5 h-0.5 bg-current rounded-full" />
-                                            <div className="w-0.5 h-0.5 bg-current rounded-full" />
-                                            <div className="w-0.5 h-0.5 bg-current rounded-full" />
-                                          </div>
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                          {block.type === "paragraph" && (
-                                            <textarea
-                                              id={`block-input-${block.id}`}
-                                              value={block.content || ""}
-                                              onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                              onPointerDown={(e) => e.stopPropagation()}
-                                              onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                              placeholder="Type text or use '+' to insert different block styles..."
-                                              style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
-                                              className="w-full bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded resize-none min-h-[1.5em] leading-relaxed transition"
-                                              rows={Math.max(1, (block.content || "").split("\n").length)}
-                                            />
-                                          )}
-                                          {block.type === "heading1" && (
-                                            <input
-                                              id={`block-input-${block.id}`}
-                                              type="text"
-                                              value={block.content || ""}
-                                              onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                              onPointerDown={(e) => e.stopPropagation()}
-                                              onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                              placeholder="Heading 1"
-                                              style={{ fontSize: `${18 * globalFontScale}px`, color: themeStyles.text }}
-                                              className="w-full bg-transparent font-bold border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded leading-tight transition"
-                                            />
-                                          )}
-                                          {block.type === "heading2" && (
-                                            <input
-                                              id={`block-input-${block.id}`}
-                                              type="text"
-                                              value={block.content || ""}
-                                              onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                              onPointerDown={(e) => e.stopPropagation()}
-                                              onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                              placeholder="Heading 2"
-                                              style={{ fontSize: `${15 * globalFontScale}px`, color: themeStyles.text }}
-                                              className="w-full bg-transparent font-bold border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded leading-tight transition"
-                                            />
-                                          )}
-                                          {block.type === "heading3" && (
-                                            <input
-                                              id={`block-input-${block.id}`}
-                                              type="text"
-                                              value={block.content || ""}
-                                              onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                              onPointerDown={(e) => e.stopPropagation()}
-                                              onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                              placeholder="Heading 3"
-                                              style={{ fontSize: `${13 * globalFontScale}px`, color: themeStyles.text }}
-                                              className="w-full bg-transparent font-bold border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded leading-tight transition"
-                                            />
-                                          )}
-                                          {block.type === "list-item" && (
-                                            <div className="flex items-center gap-1.5 w-full pl-1 text-left">
-                                              <span className="text-link font-bold text-sm select-none">•</span>
-                                              <input
-                                                id={`block-input-${block.id}`}
-                                                type="text"
-                                                value={block.content || ""}
-                                                onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                                placeholder="List item..."
-                                                style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
-                                                className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
-                                              />
-                                            </div>
-                                          )}
-                                          {block.type === "numbered-list" && (
-                                            <div className="flex items-center gap-1.5 w-full pl-1 text-left">
-                                              <span className="text-neutral-500 font-bold text-xs select-none min-w-[15px]">{block.index || 1}.</span>
-                                              <input
-                                                id={`block-input-${block.id}`}
-                                                type="text"
-                                                value={block.content || ""}
-                                                onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                                placeholder="List item..."
-                                                style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
-                                                className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
-                                              />
-                                            </div>
-                                          )}
-                                          {block.type === "todo" && (
-                                            <div className="flex items-center gap-2 w-full pl-1 text-left">
-                                              <input
-                                                type="checkbox"
-                                                checked={!!block.checked}
-                                                onChange={(e) => {
-                                                  updateBlock(originalIndex, { checked: e.target.checked });
-                                                }}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                className="w-3.5 h-3.5 rounded border-neutral-600 bg-neutral-900 text-link focus:ring-0 focus:ring-offset-0 cursor-pointer"
-                                              />
-                                              <input
-                                                id={`block-input-${block.id}`}
-                                                type="text"
-                                                value={block.content || ""}
-                                                onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                                placeholder="To-do..."
-                                                style={{
-                                                  fontSize: `${12 * globalFontScale}px`,
-                                                  color: block.checked ? themeStyles.textMuted : themeStyles.text,
-                                                  textDecoration: block.checked ? "line-through" : "none",
-                                                  opacity: block.checked ? 0.6 : 1,
-                                                }}
-                                                className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
-                                              />
-                                            </div>
-                                          )}
-                                          {block.type === "toggle" && (
-                                            <div className="flex items-center gap-1 w-full pl-1 text-left">
-                                              <button
-                                                onPointerDown={(e) => {
-                                                  e.stopPropagation();
-                                                  e.preventDefault();
-                                                  updateBlock(originalIndex, { isCollapsed: !block.isCollapsed });
-                                                }}
-                                                className="text-neutral-500 hover:text-neutral-300 flex items-center justify-center cursor-pointer select-none"
-                                              >
-                                                {block.isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                                              </button>
-                                              <input
-                                                id={`block-input-${block.id}`}
-                                                type="text"
-                                                value={block.content || ""}
-                                                onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                                placeholder="Toggle list..."
-                                                style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
-                                                className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded font-semibold transition"
-                                              />
-                                            </div>
-                                          )}
-                                          {block.type === "divider" && (
-                                            <div className="w-full py-2 cursor-default select-none pointer-events-none">
-                                              <hr style={{ borderTop: `1px solid ${theme === "light" ? "rgba(0, 0, 0, 0.15)" : "rgba(255, 255, 255, 0.2)"}` }} className="w-full" />
-                                            </div>
-                                          )}
-                                          {block.type === "callout" && (
-                                            <div
-                                              className="w-full flex gap-2 items-start p-2 rounded border shadow-sm my-0.5 text-left"
-                                              style={{
-                                                backgroundColor: theme === "light" ? "#fbfbfa" : "#17171760",
-                                                borderColor: themeStyles.border,
-                                              }}
-                                            >
-                                              <input
-                                                type="text"
-                                                maxLength={2}
-                                                value={block.emoji || "💡"}
-                                                onChange={(e) => updateBlock(originalIndex, { emoji: e.target.value })}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                className="w-5 text-center bg-transparent border-none p-0 text-xs focus:outline-none cursor-pointer"
-                                                title="Edit Emoji"
-                                              />
-                                              <input
-                                                id={`block-input-${block.id}`}
-                                                type="text"
-                                                value={block.content || ""}
-                                                onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                                placeholder="Callout note..."
-                                                style={{ fontSize: `${11 * globalFontScale}px`, color: themeStyles.text }}
-                                                className="flex-1 bg-transparent border-none p-0.5 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
-                                              />
-                                            </div>
-                                          )}
-                                          {block.type === "code" && (
-                                            <div
-                                              className="w-full rounded border flex flex-col overflow-hidden my-1 shadow-sm font-mono text-[9px] text-left"
-                                              style={{
-                                                backgroundColor: "#0d0d0d80",
-                                                borderColor: themeStyles.border,
-                                              }}
-                                            >
-                                              <div className="flex items-center justify-between px-2 py-1 border-b border-neutral-800 text-[8px] uppercase tracking-wider text-neutral-500 font-bold">
-                                                <span>Code Block</span>
-                                                <select
-                                                  value={block.language || "javascript"}
-                                                  onChange={(e) => updateBlock(originalIndex, { language: e.target.value })}
-                                                  onPointerDown={(e) => e.stopPropagation()}
-                                                  className="bg-transparent border-none text-[8px] text-neutral-400 font-bold focus:outline-none cursor-pointer"
-                                                >
-                                                  <option value="javascript">JS</option>
-                                                  <option value="typescript">TS</option>
-                                                  <option value="css">CSS</option>
-                                                  <option value="html">HTML</option>
-                                                  <option value="markdown">MD</option>
-                                                  <option value="python">PY</option>
-                                                </select>
-                                              </div>
-                                              <textarea
-                                                id={`block-input-${block.id}`}
-                                                value={block.content || ""}
-                                                onChange={(e) => updateBlock(originalIndex, { content: e.target.value })}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                                placeholder="// Write code here..."
-                                                className="w-full min-h-[50px] bg-transparent border-none p-2 focus:outline-none font-mono text-neutral-250 resize-y"
-                                                style={{ color: "#a3e635" }}
-                                              />
-                                            </div>
-                                          )}
-                                          {block.type === "image" && (
-                                            <div className="group/media relative w-full flex flex-col gap-1 my-1 text-left">
-                                              {block.url ? (
-                                                <div className="relative overflow-hidden rounded border max-w-full" style={{ borderColor: themeStyles.border }}>
-                                                  <img src={block.url} alt={block.caption || ""} className="w-full object-contain max-h-40" />
-                                                  <button
-                                                    onPointerDown={(e) => {
-                                                      e.stopPropagation();
-                                                      e.preventDefault();
-                                                      updateBlock(originalIndex, { url: "", caption: "" });
-                                                    }}
-                                                    className="absolute top-2 right-2 px-2 py-0.5 rounded bg-neutral-900/85 hover:bg-rose-500 text-white text-[8px] font-bold shadow opacity-0 group-hover/media:opacity-100 transition cursor-pointer"
-                                                  >
-                                                    Change Image
-                                                  </button>
-                                                </div>
-                                              ) : (
-                                                <div className="border border-dashed rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-center" style={{ borderColor: themeStyles.border, backgroundColor: theme === "light" ? "#fbfbfa" : "#0d0d0d20" }}>
-                                                  <div className="text-[10px] text-neutral-500 font-medium flex items-center gap-1.5"><Image size={12} /> Add Image Block</div>
-                                                  <div className="flex gap-2 items-center w-full justify-center flex-wrap">
-                                                    <label
-                                                      onPointerDown={(e) => e.stopPropagation()}
-                                                      className="px-2.5 py-1 rounded bg-link hover:bg-link/90 text-white font-bold text-[9px] cursor-pointer text-center select-none shadow"
-                                                    >
-                                                      Upload Image
-                                                      <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        className="hidden"
-                                                        onChange={(e) => {
-                                                          const file = e.target.files?.[0];
-                                                          if (file) {
-                                                            const reader = new FileReader();
-                                                            reader.onload = (event) => {
-                                                              updateBlock(originalIndex, { url: event.target?.result as string, caption: file.name });
-                                                            };
-                                                            reader.readAsDataURL(file);
-                                                          }
-                                                        }}
-                                                      />
-                                                    </label>
-                                                    <span className="text-neutral-500 text-[9px] italic">or</span>
-                                                    <input
-                                                      type="text"
-                                                      placeholder="Paste URL..."
-                                                      className="border rounded px-2 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-link w-32"
-                                                      style={{ backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.text }}
-                                                      onPointerDown={(e) => e.stopPropagation()}
-                                                      onKeyDown={(e) => {
-                                                        e.stopPropagation();
-                                                        if (e.key === "Enter") {
-                                                          updateBlock(originalIndex, { url: e.currentTarget.value });
-                                                        }
-                                                      }}
-                                                    />
-                                                  </div>
-                                                </div>
-                                              )}
-                                              {block.url && (
-                                                <input
-                                                  type="text"
-                                                  placeholder="Write Caption..."
-                                                  value={block.caption || ""}
-                                                  onChange={(e) => updateBlock(originalIndex, { caption: e.target.value })}
-                                                  onPointerDown={(e) => e.stopPropagation()}
-                                                  className="w-full bg-transparent text-center text-[9px] text-neutral-500 focus:outline-none focus:text-neutral-300 transition italic"
-                                                />
-                                              )}
-                                            </div>
-                                          )}
-                                          {block.type === "video" && (
-                                            <div className="group/media relative w-full flex flex-col gap-1 my-1 text-left">
-                                              {block.url ? (
-                                                <div className="relative overflow-hidden rounded border max-w-full" style={{ borderColor: themeStyles.border }}>
-                                                  <video controls src={block.url} className="w-full max-h-40 rounded" />
-                                                  <button
-                                                    onPointerDown={(e) => {
-                                                      e.stopPropagation();
-                                                      e.preventDefault();
-                                                      updateBlock(originalIndex, { url: "", caption: "" });
-                                                    }}
-                                                    className="absolute top-2 right-2 px-2 py-0.5 rounded bg-neutral-900/85 hover:bg-rose-500 text-white text-[8px] font-bold shadow opacity-0 group-hover/media:opacity-100 transition cursor-pointer"
-                                                  >
-                                                    Change Video
-                                                  </button>
-                                                </div>
-                                              ) : (
-                                                <div className="border border-dashed rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-center" style={{ borderColor: themeStyles.border, backgroundColor: theme === "light" ? "#fbfbfa" : "#0d0d0d20" }}>
-                                                  <div className="text-[10px] text-neutral-500 font-medium flex items-center gap-1.5"><Video size={12} /> Add Video Block</div>
-                                                  <div className="flex gap-2 items-center w-full justify-center flex-wrap">
-                                                    <label
-                                                      onPointerDown={(e) => e.stopPropagation()}
-                                                      className="px-2.5 py-1 rounded bg-link hover:bg-link/90 text-white font-bold text-[9px] cursor-pointer text-center select-none shadow"
-                                                    >
-                                                      Upload Video
-                                                      <input
-                                                        type="file"
-                                                        accept="video/*"
-                                                        className="hidden"
-                                                        onChange={(e) => {
-                                                          const file = e.target.files?.[0];
-                                                          if (file) {
-                                                            const reader = new FileReader();
-                                                            reader.onload = (event) => {
-                                                              updateBlock(originalIndex, { url: event.target?.result as string, caption: file.name });
-                                                            };
-                                                            reader.readAsDataURL(file);
-                                                          }
-                                                        }}
-                                                      />
-                                                    </label>
-                                                    <span className="text-neutral-500 text-[9px] italic">or</span>
-                                                    <input
-                                                      type="text"
-                                                      placeholder="Paste URL..."
-                                                      className="border rounded px-2 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-link w-32"
-                                                      style={{ backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.text }}
-                                                      onPointerDown={(e) => e.stopPropagation()}
-                                                      onKeyDown={(e) => {
-                                                        e.stopPropagation();
-                                                        if (e.key === "Enter") {
-                                                          updateBlock(originalIndex, { url: e.currentTarget.value });
-                                                        }
-                                                      }}
-                                                    />
-                                                  </div>
-                                                </div>
-                                              )}
-                                              {block.url && (
-                                                <input
-                                                  type="text"
-                                                  placeholder="Write Caption..."
-                                                  value={block.caption || ""}
-                                                  onChange={(e) => updateBlock(originalIndex, { caption: e.target.value })}
-                                                  onPointerDown={(e) => e.stopPropagation()}
-                                                  className="w-full bg-transparent text-center text-[9px] text-neutral-500 focus:outline-none focus:text-neutral-300 transition italic"
-                                                />
-                                              )}
-                                            </div>
-                                          )}
-                                          {block.type === "embed" && (
-                                            <div className="group/media relative w-full flex flex-col gap-1 my-1 text-left">
-                                              {block.url ? (
-                                                <div className="relative overflow-hidden rounded border h-40 w-full" style={{ borderColor: themeStyles.border }}>
-                                                  <iframe src={block.url} className="w-full h-full border-none rounded" />
-                                                  <button
-                                                    onPointerDown={(e) => {
-                                                      e.stopPropagation();
-                                                      e.preventDefault();
-                                                      updateBlock(originalIndex, { url: "" });
-                                                    }}
-                                                    className="absolute top-2 right-2 px-2 py-0.5 rounded bg-neutral-900/85 hover:bg-rose-500 text-white text-[8px] font-bold shadow opacity-0 group-hover/media:opacity-100 transition cursor-pointer"
-                                                  >
-                                                    Remove Embed
-                                                  </button>
-                                                </div>
-                                              ) : (
-                                                <div className="border border-dashed rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-center" style={{ borderColor: themeStyles.border, backgroundColor: theme === "light" ? "#fbfbfa" : "#0d0d0d20" }}>
-                                                  <div className="text-[10px] text-neutral-500 font-medium flex items-center gap-1.5"><ExternalLink size={12} /> Add Web Embed</div>
-                                                  <div className="w-full max-w-xs">
-                                                    <input
-                                                      type="text"
-                                                      placeholder="Paste Embed URL..."
-                                                      className="w-full border rounded px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-link"
-                                                      style={{ backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.text }}
-                                                      onPointerDown={(e) => e.stopPropagation()}
-                                                      onKeyDown={(e) => {
-                                                        e.stopPropagation();
-                                                        if (e.key === "Enter") {
-                                                          updateBlock(originalIndex, { url: e.currentTarget.value });
-                                                        }
-                                                      }}
-                                                    />
-                                                  </div>
-                                                </div>
-                                              )}
-                                            </div>
-                                          )}
-                                          {block.type === "table" && (
-                                            <div
-                                              className="border rounded overflow-hidden my-1 shadow-sm text-left"
-                                              style={{
-                                                backgroundColor: theme === "light" ? "#fdfbf7" : "#0d0d0d60",
-                                                borderColor: themeStyles.border,
-                                              }}
-                                            >
-                                              <table className="w-full border-collapse text-[10px]">
-                                                <thead>
-                                                  <tr
-                                                    className="border-b"
-                                                    style={{
-                                                      backgroundColor: theme === "light" ? "#f4eedf" : "#17171780",
-                                                      borderColor: themeStyles.border,
-                                                    }}
-                                                  >
-                                                    {(block.headers || []).map((h, cidx) => (
-                                                      <th key={cidx} className="p-1 border-r" style={{ borderColor: themeStyles.border }}>
-                                                        <input
-                                                          value={h}
-                                                          onChange={(e) => updateTableCell(originalIndex, "header", 0, cidx, e.target.value)}
-                                                          onPointerDown={(e) => e.stopPropagation()}
-                                                          style={{ color: themeStyles.text }}
-                                                          className="w-full bg-transparent font-bold text-center border-none p-1 focus:bg-neutral-800/10 focus:outline-none focus:ring-1 focus:ring-link rounded transition"
-                                                        />
-                                                      </th>
-                                                    ))}
-                                                  </tr>
-                                                </thead>
-                                                <tbody>
-                                                  {(block.rows || []).map((row, ridx) => (
-                                                    <tr key={ridx} className="border-b" style={{ borderColor: themeStyles.border }}>
-                                                      {row.map((cell, cidx) => (
-                                                        <td key={cidx} className="p-1 border-r" style={{ borderColor: themeStyles.border }}>
-                                                          <input
-                                                            value={cell}
-                                                            onChange={(e) => updateTableCell(originalIndex, "row", ridx, cidx, e.target.value)}
-                                                            onPointerDown={(e) => e.stopPropagation()}
-                                                            style={{ color: themeStyles.text }}
-                                                            className="w-full bg-transparent border-none p-1 focus:bg-neutral-800/10 focus:outline-none focus:ring-1 focus:ring-link rounded text-center transition"
-                                                          />
-                                                        </td>
-                                                      ))}
-                                                    </tr>
-                                                  ))}
-                                                </tbody>
-                                              </table>
-                                              <div
-                                                className="flex gap-2 p-1 text-[8px] justify-end border-t"
-                                                style={{
-                                                  backgroundColor: theme === "light" ? "#f4eedf80" : "#17171740",
-                                                  borderColor: themeStyles.border,
-                                                }}
-                                              >
-                                                <button
-                                                  onPointerDown={(e) => {
-                                                    e.stopPropagation();
-                                                    addTableRow(originalIndex);
-                                                  }}
-                                                  className="px-1.5 py-0.5 bg-neutral-800/60 hover:bg-link hover:text-white rounded border text-neutral-300 font-bold transition cursor-pointer"
-                                                  style={{ borderColor: themeStyles.border }}
-                                                >
-                                                  + Row
-                                                </button>
-                                                <button
-                                                  onPointerDown={(e) => {
-                                                    e.stopPropagation();
-                                                    addTableColumn(originalIndex);
-                                                  }}
-                                                  className="px-1.5 py-0.5 bg-neutral-800/60 hover:bg-link hover:text-white rounded border text-neutral-300 font-bold transition cursor-pointer"
-                                                  style={{ borderColor: themeStyles.border }}
-                                                >
-                                                  + Col
-                                                </button>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                        
-                                        {/* Action buttons (Drag / Delete) */}
-                                        <div className="opacity-0 group-hover/block:opacity-100 flex items-center justify-center p-0.5 rounded text-neutral-500 hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer self-center ml-1">
-                                          <button
-                                            onPointerDown={(e) => {
-                                              e.stopPropagation();
-                                              deleteBlock(originalIndex);
-                                            }}
-                                            title="Delete Block"
-                                            className="text-neutral-500 hover:text-rose-500 transition cursor-pointer"
-                                          >
-                                            <Trash2 size={12} />
-                                          </button>
-                                        </div>
-                                      </div>
-                                      {renderInserterZone(originalIndex + 1)}
-                                    </div>
-                                  );
-                                })}
+                                {roots.map((rootNode) => renderTreeNode(rootNode))}
                               </div>
                             </div>
                           );
+
                         })()
                       }
 

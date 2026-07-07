@@ -33,9 +33,7 @@ export function parseTextToBlocks(text: string): Block[] {
     const level = Math.floor(leadingSpaces / 4);
     const cleanLine = line.trim();
     
-    if (!cleanLine && line.length > 0) {
-      // Empty line with spaces
-      blocks.push({ id: blockId, type: "paragraph", content: "", level });
+    if (!cleanLine) {
       i++;
       continue;
     }
@@ -193,7 +191,7 @@ export function parseTextToBlocks(text: string): Block[] {
 }
 
 export function serializeBlocksToText(blocks: Block[]): string {
-  return blocks.map(block => {
+  const serializeSingleBlock = (block: Block): string => {
     const indent = " ".repeat((block.level || 0) * 4);
     if (block.type === "heading1") return `${indent}# ${block.content || ""}`;
     if (block.type === "heading2") return `${indent}## ${block.content || ""}`;
@@ -220,7 +218,25 @@ export function serializeBlocksToText(blocks: Block[]): string {
       return `${headerStr}\n${sepStr}\n${rowsStr}`;
     }
     return `${indent}${block.content || ""}`;
-  }).join("\n");
+  };
+
+  let text = "";
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const blockText = serializeSingleBlock(block);
+    if (i > 0) {
+      const prev = blocks[i - 1];
+      const isList = (type: string) => type === "list-item" || type === "todo" || type === "numbered-list" || type === "toggle";
+      if (isList(prev.type) && isList(block.type)) {
+        text += "\n" + blockText;
+      } else {
+        text += "\n\n" + blockText;
+      }
+    } else {
+      text += blockText;
+    }
+  }
+  return text;
 }
 
 export function formatInlineMarkdown(text: string): string {
