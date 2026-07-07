@@ -293,12 +293,12 @@ export function WorldCanvasRenderer(): React.JSX.Element {
       ? `\n\nEtiquetas existentes en el proyecto (puedes reutilizar algunas o crear nuevas): ${allExistingTags.join(", ")}`
       : "";
 
-    const structuredInstructions = `Responde ÚNICAMENTE con un objeto JSON válido con esta estructura exacta (sin texto extra fuera del JSON):
-{
-  "title": "<título corto y descriptivo para la tarjeta>",
-  "text": "<contenido en formato Markdown: párrafos, listas con -, encabezados con ##, etc.>",
-  "tags": ["<etiqueta1>", "<etiqueta2>"]
-}`;
+    const structuredInstructions = `Responde usando EXACTAMENTE este formato de etiquetas (sin texto extra fuera de ellas):
+[TITLE]Título corto y descriptivo[/TITLE]
+[TAGS]etiqueta1, etiqueta2[/TAGS]
+[CONTENT]
+Contenido en formato Markdown (párrafos, listas con -, encabezados con ##, etc.).
+[/CONTENT]`;
 
     // Load prompt instructions from the card type's file
     const cardTypeKey = (card.cardType || card.type || "general").toLowerCase();
@@ -328,7 +328,7 @@ ${structuredInstructions}`;
     }
 
     const systemMsg = ollamaSystemPrompt.trim() ||
-      "Eres un asistente experto en worldbuilding y narrativa literaria. Siempre respondes en español y usas formato Markdown en los textos. Cuando se te pide un JSON, respondes SOLO con el objeto JSON, sin texto adicional.";
+      "Eres un asistente experto en worldbuilding y narrativa literaria. Siempre respondes en español y usas formato Markdown en los textos.";
 
     const base = ollamaEndpoint.replace(/\/+$/, "");
 
@@ -371,9 +371,20 @@ ${structuredInstructions}`;
               const token = parsed?.message?.content ?? parsed?.response ?? "";
               rawResult += token;
 
+              // Live preview: try to extract content inside [CONTENT] tags for display
+              let previewText = rawResult;
+              const contentMatch = rawResult.match(/\[CONTENT\]([\s\S]*?)(?:\[\/CONTENT\]|$)/);
+              if (contentMatch) {
+                previewText = contentMatch[1].trim();
+              } else if (rawResult.includes("[CONTENT]")) {
+                previewText = rawResult.split("[CONTENT]")[1].trim();
+              } else if (rawResult.includes("[/TITLE]") || rawResult.includes("[/TAGS]")) {
+                previewText = "Generando contenido...";
+              }
+
               // Live preview: stream into card text while generating
               const updatedNodes = canvasData.nodes.map((n) =>
-                n.id === card.id ? { ...n, text: rawResult } : n
+                n.id === card.id ? { ...n, text: previewText } : n
               );
               dispatch({
                 type: "controls.setValue",
@@ -386,23 +397,33 @@ ${structuredInstructions}`;
         }
       }
 
-      // Parse structured JSON from the LLM response
+      // Parse structured format from the LLM response
       let parsedTitle: string | null = null;
       let parsedText: string | null = null;
       let parsedTags: string[] | null = null;
 
-      try {
-        // Try to extract a JSON block from the response
-        const jsonMatch = rawResult.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          if (typeof parsed.title === "string" && parsed.title.trim()) parsedTitle = parsed.title.trim();
-          if (typeof parsed.text === "string" && parsed.text.trim()) parsedText = parsed.text.trim();
-          if (Array.isArray(parsed.tags)) parsedTags = parsed.tags.map((t: any) => String(t).trim()).filter(Boolean);
+      const titleMatch = rawResult.match(/\[TITLE\]([\s\S]*?)\[\/TITLE\]/i);
+      if (titleMatch && titleMatch[1].trim()) parsedTitle = titleMatch[1].trim();
+
+      const tagsMatch = rawResult.match(/\[TAGS\]([\s\S]*?)\[\/TAGS\]/i);
+      if (tagsMatch && tagsMatch[1].trim()) {
+        parsedTags = tagsMatch[1].split(",").map(t => t.trim()).filter(Boolean);
+      }
+
+      const contentMatch = rawResult.match(/\[CONTENT\]([\s\S]*?)\[\/CONTENT\]/i);
+      if (contentMatch && contentMatch[1].trim()) {
+        parsedText = contentMatch[1].trim();
+      } else {
+        // Fallback: if no tags found, just use the raw text
+        if (!titleMatch && !tagsMatch && !contentMatch) {
+          parsedText = rawResult.trim();
+        } else {
+          // If we found some tags but no closing CONTENT tag, try to get everything after [CONTENT]
+          const openContentMatch = rawResult.match(/\[CONTENT\]([\s\S]*)$/i);
+          if (openContentMatch && openContentMatch[1].trim()) {
+            parsedText = openContentMatch[1].trim();
+          }
         }
-      } catch (e) {
-        // JSON parse failed — fall back to using raw text as body
-        parsedText = rawResult.trim();
       }
 
       // Build updated node with everything the AI provided
@@ -2277,8 +2298,15 @@ ${structuredInstructions}`;
                                 parentNode = potential;
                                 break;
                               }
+                              // List/todo nesting: if current block is indented deeper than a list item, attach to it
+                              if ((potential.block.type === "list-item" || potential.block.type === "todo" || potential.block.type === "numbered-list") && level > pLevel) {
+                                parentNode = potential;
+                                break;
+                              }
                               // Stop searching once we hit a block of equal or lower heading rank
                               if (pRank <= rank && pRank < 99) break;
+                              // Also stop searching if we hit a list item with same or lower indent level
+                              if ((potential.block.type === "list-item" || potential.block.type === "todo" || potential.block.type === "numbered-list" || potential.block.type === "toggle") && pLevel <= level && rank === 99) break;
                             }
 
                             if (parentNode) {
@@ -2741,7 +2769,7 @@ ${structuredInstructions}`;
                                 {renderInserterZone(inserterAfterIndex)}
 
                                 {/* Children container - only shown when expanded */}
-                                {hasChildren && isCollapsible && !isCollapsed && (
+                                {hasChildren && (!isCollapsible || !isCollapsed) && (
                                   <div className="border-l-2 pl-3 ml-3 mt-0.5 flex flex-col gap-0" style={{ borderColor: `${themeStyles.border}` }}>
                                     {children.map((childNode) => renderTreeNode(childNode))}
                                   </div>

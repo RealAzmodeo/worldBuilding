@@ -38,26 +38,37 @@ export function parseTextToBlocks(text: string): Block[] {
       continue;
     }
     
+    // Helper to check for collapsed marker
+    const checkCollapsed = (text) => {
+      const match = text.match(/(.*?)\s*<!--c-->$/);
+      if (match) return { text: match[1], isCollapsed: true };
+      return { text, isCollapsed: false };
+    };
+
     // Parse Headings
     if (cleanLine.startsWith("# ")) {
-      blocks.push({ id: blockId, type: "heading1", content: cleanLine.slice(2), level });
+      const { text, isCollapsed } = checkCollapsed(cleanLine.slice(2));
+      blocks.push({ id: blockId, type: "heading1", content: text, level, isCollapsed });
       i++;
       continue;
     }
     if (cleanLine.startsWith("## ")) {
-      blocks.push({ id: blockId, type: "heading2", content: cleanLine.slice(3), level });
+      const { text, isCollapsed } = checkCollapsed(cleanLine.slice(3));
+      blocks.push({ id: blockId, type: "heading2", content: text, level, isCollapsed });
       i++;
       continue;
     }
     if (cleanLine.startsWith("### ")) {
-      blocks.push({ id: blockId, type: "heading3", content: cleanLine.slice(4), level });
+      const { text, isCollapsed } = checkCollapsed(cleanLine.slice(4));
+      blocks.push({ id: blockId, type: "heading3", content: text, level, isCollapsed });
       i++;
       continue;
     }
     
     // Parse Toggle List item (- >> Title or * >> Title)
     if (cleanLine.startsWith("- >> ") || cleanLine.startsWith("* >> ")) {
-      blocks.push({ id: blockId, type: "toggle", content: cleanLine.slice(5), level, isCollapsed: false });
+      const { text, isCollapsed } = checkCollapsed(cleanLine.slice(5));
+      blocks.push({ id: blockId, type: "toggle", content: text, level, isCollapsed });
       i++;
       continue;
     }
@@ -193,10 +204,11 @@ export function parseTextToBlocks(text: string): Block[] {
 export function serializeBlocksToText(blocks: Block[]): string {
   const serializeSingleBlock = (block: Block): string => {
     const indent = " ".repeat((block.level || 0) * 4);
-    if (block.type === "heading1") return `${indent}# ${block.content || ""}`;
-    if (block.type === "heading2") return `${indent}## ${block.content || ""}`;
-    if (block.type === "heading3") return `${indent}### ${block.content || ""}`;
-    if (block.type === "toggle") return `${indent}- >> ${block.content || ""}`;
+    const collapsedSuffix = block.isCollapsed ? " <!--c-->" : "";
+    if (block.type === "heading1") return `${indent}# ${block.content || ""}${collapsedSuffix}`;
+    if (block.type === "heading2") return `${indent}## ${block.content || ""}${collapsedSuffix}`;
+    if (block.type === "heading3") return `${indent}### ${block.content || ""}${collapsedSuffix}`;
+    if (block.type === "toggle") return `${indent}- >> ${block.content || ""}${collapsedSuffix}`;
     if (block.type === "todo") return `${indent}- [${block.checked ? "x" : " "}] ${block.content || ""}`;
     if (block.type === "list-item") return `${indent}- ${block.content || ""}`;
     if (block.type === "numbered-list") return `${indent}${block.index || 1}. ${block.content || ""}`;
