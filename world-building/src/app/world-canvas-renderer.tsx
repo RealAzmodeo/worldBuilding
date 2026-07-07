@@ -1097,6 +1097,8 @@ ${structuredInstructions}`;
         createToolcraftPngExportCanvas({
           resolution: state.values["export.image.resolution"] as any,
           includeBackground: includeBackground,
+          render: () => { /* no-op or default */ },
+          state: state
         });
       } else if (cmd === "workspace.addCard") {
         // Add card at center of canvas view

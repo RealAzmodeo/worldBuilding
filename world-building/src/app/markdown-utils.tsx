@@ -39,7 +39,7 @@ export function parseTextToBlocks(text: string): Block[] {
     }
     
     // Helper to check for collapsed marker
-    const checkCollapsed = (text) => {
+    const checkCollapsed = (text: string) => {
       const match = text.match(/(.*?)\s*<!--c-->$/);
       if (match) return { text: match[1], isCollapsed: true };
       return { text, isCollapsed: false };
