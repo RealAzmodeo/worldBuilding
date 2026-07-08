@@ -4550,6 +4550,99 @@ ${storyText}
         </div>,
         document.body
       )}
+
+      {/* Story Analyzer Overlay */}
+      {isStoryAnalyzerOpen && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl rounded-xl border shadow-2xl flex flex-col"
+               style={{ backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.text }}>
+
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: themeStyles.border }}>
+              <div className="flex items-center gap-2">
+                <Sparkles size={18} className="text-link" />
+                <h3 className="font-bold text-sm">Analyze Story (AI)</h3>
+              </div>
+              <button
+                onClick={() => setIsStoryAnalyzerOpen(false)}
+                className="p-1 hover:bg-black/10 rounded transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-auto flex flex-col gap-4">
+              <p className="text-xs opacity-70">
+                Paste your story text here, or upload a .txt file. The AI will dissect it to identify entities (characters, locations, etc.) and their relationships, automatically generating connected cards on your canvas.
+              </p>
+
+              <div className="flex gap-2">
+                <input
+                  type="file"
+                  accept=".txt"
+                  className="hidden"
+                  id="story-txt-upload"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (re) => {
+                        setStoryAnalyzerText(re.target?.result as string);
+                      };
+                      reader.readAsText(file);
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => document.getElementById("story-txt-upload")?.click()}
+                  className="px-3 py-1.5 text-xs font-medium rounded border hover:bg-black/5 transition flex items-center gap-2"
+                  style={{ borderColor: themeStyles.border }}
+                >
+                  <FileText size={14} />
+                  Upload .txt
+                </button>
+              </div>
+
+              <textarea
+                value={storyAnalyzerText}
+                onChange={(e) => setStoryAnalyzerText(e.target.value)}
+                placeholder="Once upon a time in the kingdom of..."
+                className="w-full h-64 p-3 text-sm rounded border resize-none focus:outline-none focus:ring-1 focus:ring-link bg-transparent"
+                style={{ borderColor: themeStyles.border }}
+                disabled={storyAnalyzerIsAnalyzing}
+              />
+            </div>
+
+            <div className="p-4 border-t flex justify-end gap-2" style={{ borderColor: themeStyles.border }}>
+              <button
+                onClick={() => setIsStoryAnalyzerOpen(false)}
+                className="px-4 py-2 text-xs font-medium rounded hover:bg-black/5 transition"
+                disabled={storyAnalyzerIsAnalyzing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => analyzeStoryWithOllama(storyAnalyzerText)}
+                disabled={!storyAnalyzerText.trim() || storyAnalyzerIsAnalyzing}
+                className="px-4 py-2 text-xs font-medium rounded bg-link text-white hover:bg-blue-600 transition flex items-center gap-2 disabled:opacity-50"
+              >
+                {storyAnalyzerIsAnalyzing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} />
+                    Analyze & Generate
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
     </div>
   );
 }
