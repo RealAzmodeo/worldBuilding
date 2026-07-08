@@ -796,7 +796,7 @@ export const appAcceptance: readonly ToolcraftComponentAcceptance[] = [
     browser: true,
     browserTestName: "browser: verifies worldbuilder board interactions",
     evidence: "persistence-state",
-    actionCoverage: ["export.png", "workspace.addCard", "workspace.deleteCard", "workspace.clearBoard"]
+    actionCoverage: ["export.png", "export.project", "import.project", "workspace.analyzeStory", "workspace.addCard", "workspace.deleteCard", "workspace.clearBoard"]
   },
   {
     id: "runtime.persistence",

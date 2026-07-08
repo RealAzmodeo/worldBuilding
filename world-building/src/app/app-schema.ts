@@ -309,6 +309,21 @@ export const appSchema = defineToolcraft({
                   icon: "upload-simple"
                 },
                 {
+                  label: "Export Project",
+                  value: "export.project",
+                  icon: "upload-simple"
+                },
+                {
+                  label: "Import Project",
+                  value: "import.project",
+                  icon: "upload-simple"
+                },
+                {
+                  label: "Analyze Story",
+                  value: "workspace.analyzeStory",
+                  icon: "upload-simple"
+                },
+                {
                   label: "Add Card",
                   value: "workspace.addCard"
                 },

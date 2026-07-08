@@ -52,6 +52,12 @@ export function WorldCanvasRenderer(): React.JSX.Element {
   const ollamaTemperature = Number(state.values["workspace.ollamaTemperature"] ?? 0.7);
   const ollamaSystemPrompt = (state.values["workspace.ollamaSystemPrompt"] as string) || "";
 
+  // Story Analyzer State
+  const [isStoryAnalyzerOpen, setIsStoryAnalyzerOpen] = React.useState(false);
+  const [storyAnalyzerText, setStoryAnalyzerText] = React.useState("");
+  const [storyAnalyzerIsAnalyzing, setStoryAnalyzerIsAnalyzing] = React.useState(false);
+  const storyAnalyzerAbortControllerRef = React.useRef<AbortController | null>(null);
+
   const [aiCardId, setAiCardId] = React.useState<string | null>(null);
   const [aiPrompt, setAiPrompt] = React.useState("");
   const [aiTab, setAiTab] = React.useState<"rewrite" | "prompt">("rewrite");
@@ -548,6 +554,145 @@ ${structuredInstructions}`;
       setAiPrompt("");
     }
   };
+
+  const analyzeStoryWithOllama = React.useCallback(async (storyText: string) => {
+    if (!storyText.trim()) return;
+
+    setStoryAnalyzerIsAnalyzing(true);
+    const controller = new AbortController();
+    storyAnalyzerAbortControllerRef.current = controller;
+
+    const base = ollamaEndpoint.replace(/\/+$/, "");
+
+    const prompt = `Analiza la siguiente historia y extrae las entidades clave (personajes, lugares, facciones, objetos, etc.) y sus relaciones.
+
+Devuelve EXCLUSIVAMENTE un objeto JSON válido con la siguiente estructura, sin texto adicional antes ni después, y sin bloques de código (no uses \`\`\`json).
+
+Estructura requerida:
+{
+  "nodes": [
+    {
+      "id": "node_1",
+      "title": "Nombre de la entidad",
+      "cardType": "character", // opciones: character, location, faction, magic_spell, general
+      "text": "# Nombre\\n\\nBreve descripción de la entidad.",
+      "color": "#70b0fa"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_1",
+      "fromNode": "node_1",
+      "toNode": "node_2",
+      "label": "Relación (ej. Aliado de)",
+      "relationshipType": "solid", // opciones: solid, dashed, dotted
+      "color": "gray" // opciones: gray, green, red, purple, blue
+    }
+  ]
+}
+
+Historia:
+"""
+${storyText}
+"""
+`;
+
+    const systemMsg = ollamaSystemPrompt.trim() ||
+      "Eres un experto en extraer entidades de worldbuilding y generar JSON estructurado.";
+
+    try {
+      const response = await fetch(`${base}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedAiModel,
+          stream: false,
+          options: { temperature: ollamaTemperature },
+          messages: [
+            { role: "system", content: systemMsg },
+            { role: "user", content: prompt },
+          ],
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+
+      const data = await response.json();
+      let rawContent = data.message?.content || data.response || "";
+
+      // Clean up potential markdown wrappers
+      rawContent = rawContent.replace(/```json/g, "").replace(/```/g, "").trim();
+
+      try {
+        const parsedData = JSON.parse(rawContent);
+
+        if (parsedData.nodes && Array.isArray(parsedData.nodes)) {
+          // Calculate positions to spread them out
+          const newNodes = parsedData.nodes.map((n: any, i: number) => ({
+            ...n,
+            id: `ai_node_${Date.now()}_${i}`,
+            originalId: n.id, // Keep to map edges
+            x: (width / 2) + (Math.cos(i) * 300) - 160,
+            y: (height / 2) + (Math.sin(i) * 300) - 100,
+            width: 320,
+            height: 200,
+            type: "text",
+            cardType: n.cardType || "general",
+            color: n.color || "#70b0fa"
+          }));
+
+          const newEdges = (parsedData.edges || []).map((e: any, i: number) => {
+            const fromNode = newNodes.find((n: any) => n.originalId === e.fromNode);
+            const toNode = newNodes.find((n: any) => n.originalId === e.toNode);
+            if (fromNode && toNode) {
+              return {
+                id: `ai_edge_${Date.now()}_${i}`,
+                fromNode: fromNode.id,
+                toNode: toNode.id,
+                label: e.label || "",
+                relationshipType: e.relationshipType || "solid",
+                color: e.color || "gray",
+                weight: 2
+              };
+            }
+            return null;
+          }).filter(Boolean);
+
+          const finalNodes = [...canvasData.nodes, ...newNodes.map((n: any) => { delete n.originalId; return n; })];
+          const finalEdges = [...canvasData.edges, ...newEdges];
+
+          dispatch({
+            type: "controls.setValue",
+            target: "workspace.canvasData",
+            value: JSON.stringify({ nodes: finalNodes, edges: finalEdges }, null, 2),
+            history: "record"
+          });
+
+          setIsStoryAnalyzerOpen(false);
+          setStoryAnalyzerText("");
+        } else {
+          alert("La respuesta de la IA no incluyó nodos válidos.");
+        }
+
+      } catch (parseErr) {
+        console.error("Failed to parse AI JSON response", rawContent, parseErr);
+        alert("La IA devolvió un formato inválido. Intenta de nuevo.");
+      }
+
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        console.error("Story Analysis failed:", err);
+        alert(`Ollama connection failed: ${err.message}`);
+      }
+    } finally {
+      setStoryAnalyzerIsAnalyzing(false);
+      storyAnalyzerAbortControllerRef.current = null;
+    }
+
+  }, [ollamaEndpoint, ollamaTemperature, ollamaSystemPrompt, selectedAiModel, canvasData, dispatch, width, height]);
 
   const cancelOllamaGenerate = () => {
     if (abortControllerRef.current) {
@@ -1100,6 +1245,58 @@ ${structuredInstructions}`;
           render: () => { /* no-op or default */ },
           state: state
         });
+      } else if (cmd === "export.project") {
+        const dataStr = JSON.stringify(canvasData, null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `world-project-${new Date().toISOString().slice(0,10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else if (cmd === "import.project") {
+        const confirmImport = window.confirm("¿Seguro que quieres importar un proyecto? Asegúrate de haber guardado tu progreso actual, ya que será reemplazado.");
+        if (confirmImport) {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "application/json,.json,.txt";
+          input.onchange = (ev) => {
+            const file = (ev.target as HTMLInputElement).files?.[0];
+            if (file) {
+              const reader = new FileReader();
+              reader.onload = (readEv) => {
+                const content = readEv.target?.result as string;
+                if (content) {
+                  try {
+                    const parsed = JSON.parse(content);
+                    if (parsed.nodes && Array.isArray(parsed.nodes) && parsed.edges && Array.isArray(parsed.edges)) {
+                      dispatch({
+                        type: "controls.setValue",
+                        target: "workspace.canvasData",
+                        value: JSON.stringify(parsed, null, 2),
+                      });
+                      dispatch({
+                        type: "controls.setValue",
+                        target: "workspace.selectedCardId",
+                        value: "",
+                      });
+                    } else {
+                      alert("El archivo no tiene el formato correcto (faltan nodes o edges).");
+                    }
+                  } catch (e) {
+                    alert("Error al analizar el archivo: " + String(e));
+                  }
+                }
+              };
+              reader.readAsText(file);
+            }
+          };
+          input.click();
+        }
+      } else if (cmd === "workspace.analyzeStory") {
+        setIsStoryAnalyzerOpen(true);
       } else if (cmd === "workspace.addCard") {
         // Add card at center of canvas view
         const newCard = {
