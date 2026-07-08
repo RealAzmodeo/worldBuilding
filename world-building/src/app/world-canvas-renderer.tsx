@@ -1465,14 +1465,14 @@ ${structuredInstructions}`;
           };
 
           const connection = getClosestConnectionSide(fromRect, toRect);
-          const path = React.useMemo(() => getBezierPath(
+          const path = getBezierPath(
             connection.from.x,
             connection.from.y,
             connection.from.side,
             connection.to.x,
             connection.to.y,
             connection.to.side
-          ), [connection.from.x, connection.from.y, connection.from.side, connection.to.x, connection.to.y, connection.to.side]);
+          );
 
           const edgeId = edge.id || `edge_${edge.fromNode}_${edge.toNode}`;
           const isEdgeSelected = edgeId === selectedConnectionId;
