@@ -251,7 +251,9 @@ export function WorldCanvasRenderer(): React.JSX.Element {
             const blockInputIdMatch = inputEl.id.match(/^block-input-(.*)$/);
             const text = inputEl.value.substring(start, end);
 
-            if (text && blockInputIdMatch) {
+            if (text && inputEl) {
+              const blockInputIdMatch = inputEl.id.match(/^block-input-(.*)$/);
+
               const rect = inputEl.getBoundingClientRect();
 
               // We approximate the position of the popup based on the input rect
@@ -259,7 +261,7 @@ export function WorldCanvasRenderer(): React.JSX.Element {
                 x: rect.left + rect.width / 2,
                 y: rect.top - 40, // above the input
                 text,
-                blockId: blockInputIdMatch[1],
+                blockId: blockInputIdMatch ? blockInputIdMatch[1] : "",
                 index: 0, // we will derive index at apply time or we don't strictly need it if we mutate value directly
                 inputEl
               });
@@ -2753,7 +2755,13 @@ ${storyText}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                     onFocus={() => setFocusedBlockId(block.id)}
-                                    onBlur={() => setFocusedBlockId(null)}
+                                    onBlur={(e) => {
+                                        // prevent blur if clicking color picker or formatting toolbar
+                                        if (e.relatedTarget && e.relatedTarget.closest('#format-toolbar')) {
+                                          return;
+                                        }
+                                        setFocusedBlockId(null);
+                                      }}
                                     autoFocus
                                     placeholder="Type text or use '+' to insert different block styles..."
                                     style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
@@ -2931,7 +2939,13 @@ ${storyText}
                                       onPointerDown={(e) => e.stopPropagation()}
                                       onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                       onFocus={() => setFocusedBlockId(block.id)}
-                                      onBlur={() => setFocusedBlockId(null)}
+                                      onBlur={(e) => {
+                                        // prevent blur if clicking color picker or formatting toolbar
+                                        if (e.relatedTarget && e.relatedTarget.closest('#format-toolbar')) {
+                                          return;
+                                        }
+                                        setFocusedBlockId(null);
+                                      }}
                                       autoFocus
                                       placeholder="List item..."
                                       style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
@@ -2977,7 +2991,13 @@ ${storyText}
                                       onPointerDown={(e) => e.stopPropagation()}
                                       onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                       onFocus={() => setFocusedBlockId(block.id)}
-                                      onBlur={() => setFocusedBlockId(null)}
+                                      onBlur={(e) => {
+                                        // prevent blur if clicking color picker or formatting toolbar
+                                        if (e.relatedTarget && e.relatedTarget.closest('#format-toolbar')) {
+                                          return;
+                                        }
+                                        setFocusedBlockId(null);
+                                      }}
                                       autoFocus
                                       placeholder="List item..."
                                       style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
@@ -3029,7 +3049,13 @@ ${storyText}
                                       onPointerDown={(e) => e.stopPropagation()}
                                       onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                       onFocus={() => setFocusedBlockId(block.id)}
-                                      onBlur={() => setFocusedBlockId(null)}
+                                      onBlur={(e) => {
+                                        // prevent blur if clicking color picker or formatting toolbar
+                                        if (e.relatedTarget && e.relatedTarget.closest('#format-toolbar')) {
+                                          return;
+                                        }
+                                        setFocusedBlockId(null);
+                                      }}
                                       autoFocus
                                       placeholder="To-do..."
                                       style={{
@@ -3094,7 +3120,13 @@ ${storyText}
                                       onPointerDown={(e) => e.stopPropagation()}
                                       onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                       onFocus={() => setFocusedBlockId(block.id)}
-                                      onBlur={() => setFocusedBlockId(null)}
+                                      onBlur={(e) => {
+                                        // prevent blur if clicking color picker or formatting toolbar
+                                        if (e.relatedTarget && e.relatedTarget.closest('#format-toolbar')) {
+                                          return;
+                                        }
+                                        setFocusedBlockId(null);
+                                      }}
                                       autoFocus
                                       placeholder="Toggle list..."
                                       style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
@@ -3156,7 +3188,13 @@ ${storyText}
                                       onPointerDown={(e) => e.stopPropagation()}
                                       onKeyDown={(e) => handleKeyDown(e, originalIndex)}
                                       onFocus={() => setFocusedBlockId(block.id)}
-                                      onBlur={() => setFocusedBlockId(null)}
+                                      onBlur={(e) => {
+                                        // prevent blur if clicking color picker or formatting toolbar
+                                        if (e.relatedTarget && e.relatedTarget.closest('#format-toolbar')) {
+                                          return;
+                                        }
+                                        setFocusedBlockId(null);
+                                      }}
                                       autoFocus
                                       placeholder="Callout note..."
                                       style={{ fontSize: `${11 * globalFontScale}px`, color: themeStyles.text }}
@@ -4098,7 +4136,7 @@ ${storyText}
 
       {formatMenu && createPortal(
         <div
-          className="fixed z-[10000] rounded-md border shadow-xl backdrop-blur-md flex items-center p-1 text-[11px] pointer-events-auto gap-1"
+          id="format-toolbar" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }} className="fixed z-[10000] rounded-md border shadow-xl backdrop-blur-md flex items-center p-1 text-[11px] pointer-events-auto gap-1"
           style={{
             left: `${formatMenu.x}px`,
             top: `${formatMenu.y}px`,
@@ -4170,6 +4208,13 @@ ${storyText}
 
                 // Wrap in span
                 const newVal = before + `<span style="color: ${color}">` + selectedText + "</span>" + after;
+
+                // Keep focus
+                setTimeout(() => {
+                  el.focus();
+                  el.setSelectionRange(start, start + `<span style="color: ${color}">${selectedText}</span>`.length);
+                }, 10);
+
 
                 // Trigger React onChange
                 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
