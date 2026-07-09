@@ -564,7 +564,7 @@ ${structuredInstructions}`;
 
     const base = ollamaEndpoint.replace(/\/+$/, "");
 
-    const prompt = `Analiza la siguiente historia y extrae las entidades clave (personajes, lugares, facciones, objetos, etc.) y sus relaciones.
+    const prompt = `Analyze the following story and extract las entidades clave (personajes, lugares, facciones, objetos, etc.) y sus relaciones.
 
 Devuelve EXCLUSIVAMENTE un objeto JSON válido con la siguiente estructura, sin texto adicional antes ni después, y sin bloques de código (no uses \`\`\`json).
 
@@ -4553,7 +4553,10 @@ ${storyText}
 
       {/* Story Analyzer Overlay */}
       {isStoryAnalyzerOpen && createPortal(
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pointer-events-auto"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           <div className="w-full max-w-2xl rounded-xl border shadow-2xl flex flex-col"
                style={{ backgroundColor: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.text }}>
 
