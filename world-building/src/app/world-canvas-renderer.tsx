@@ -4048,6 +4048,42 @@ ${storyText}
           >
             &lt;/&gt;
           </button>
+
+          <div className="w-px h-5 bg-neutral-700/50 mx-1" />
+
+          <label
+            className="w-6 h-6 flex items-center justify-center rounded-full cursor-pointer hover:ring-2 hover:ring-neutral-500 overflow-hidden relative transition"
+            title="Text Color"
+          >
+            <input
+              type="color"
+              className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer pointer-events-auto"
+              defaultValue="#ef4444"
+              onChange={(e) => {
+                const color = e.target.value;
+                const el = formatMenu.inputEl;
+                const start = el.selectionStart || 0;
+                const end = el.selectionEnd || 0;
+                if (start === end) return;
+
+                const val = el.value;
+                const selectedText = val.substring(start, end);
+                const before = val.substring(0, start);
+                const after = val.substring(end);
+
+                // Wrap in span
+                const newVal = before + `<span style="color: ${color}">` + selectedText + "</span>" + after;
+
+                // Trigger React onChange
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                nativeInputValueSetter?.call(el, newVal);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+
+                setFormatMenu(null);
+              }}
+            />
+            <div className="w-4 h-4 rounded-full border border-neutral-600 shadow-sm" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }} />
+          </label>
         </div>,
         document.body
       )}
