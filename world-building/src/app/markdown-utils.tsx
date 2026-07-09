@@ -247,25 +247,29 @@ export function serializeBlocksToText(blocks: Block[]): string {
 }
 
 export function formatInlineMarkdown(text: string): string {
+  if (!text) return "&nbsp;";
   let formatted = text;
 
-  // 1. Images: ![alt](url)
+  // 1. Strikethrough: ~~text~~
+  formatted = formatted.replace(/~~(.*?)~~/g, "<del>$1</del>");
+
+  // 2. Bold: **text**
+  formatted = formatted.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+  // 3. Italic: *text* (matches * but avoids capturing HTML tags if they have * which shouldn't happen, but let's be simple)
+  formatted = formatted.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
+
+  // 4. Images: ![alt](url)
   formatted = formatted.replace(
     /!\[(.*?)\]\((.*?)\)/g,
     '<img src="$2" alt="$1" class="max-w-full h-auto rounded border border-neutral-800 my-1 inline-block" />'
   );
 
-  // 2. Links: [label](url)
+  // 5. Links: [label](url) - make sure it doesn't match images
   formatted = formatted.replace(
-    /\[(.*?)\]\((.*?)\)/g,
+    /(?<!!)\[(.*?)\]\((.*?)\)/g,
     '<a href="$2" target="_blank" class="text-link hover:underline">$1</a>'
   );
-
-  // 3. Bold: **text**
-  formatted = formatted.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-
-  // 4. Italic: *text*
-  formatted = formatted.replace(/\*(.*?)\*/g, "<em>$1</em>");
 
   return formatted || "&nbsp;";
 }
@@ -327,6 +331,12 @@ export function renderMarkdown(text: string): React.ReactNode[] {
     
     // Handle lists
 
+const rawLine = lines[i];
+    const indentMatch = rawLine.match(/^(\s*)/);
+    const indentSpaceCount = indentMatch ? indentMatch[1].length : 0;
+    // 1 level for every 2 spaces, approx
+    const indentLevel = Math.floor(indentSpaceCount / 2);
+
     // Check if it matches a todo list format, but maybe without trailing spaces:
     const todoUncheckedMatch = line.match(/^(?:- |\* )?\[ \](?: (.*))?$/);
     const todoCheckedMatch = line.match(/^(?:- |\* )?\[x\](?: (.*))?$/i);
@@ -336,7 +346,7 @@ export function renderMarkdown(text: string): React.ReactNode[] {
       const itemText = todoUncheckedMatch[1] || "";
       const html = formatInlineMarkdown(itemText);
       currentList.push(
-        <li key={`li-${i}`} className="flex items-start gap-2 text-neutral-300 list-none -ml-4">
+        <li key={`li-${i}`} className="flex items-start gap-2 text-neutral-300 list-none -ml-4" style={{ marginLeft: `${indentLevel * 12 - 16}px` }}>
           <input type="checkbox" disabled className="mt-1 translate-y-[2px]" />
           <span dangerouslySetInnerHTML={{ __html: html }} />
         </li>
@@ -347,7 +357,7 @@ export function renderMarkdown(text: string): React.ReactNode[] {
       const itemText = todoCheckedMatch[1] || "";
       const html = formatInlineMarkdown(itemText);
       currentList.push(
-        <li key={`li-${i}`} className="flex items-start gap-2 text-neutral-500 line-through list-none -ml-4">
+        <li key={`li-${i}`} className="flex items-start gap-2 text-neutral-500 line-through list-none -ml-4" style={{ marginLeft: `${indentLevel * 12 - 16}px` }}>
           <input type="checkbox" disabled checked className="mt-1 translate-y-[2px]" />
           <span dangerouslySetInnerHTML={{ __html: html }} />
         </li>
@@ -358,7 +368,7 @@ export function renderMarkdown(text: string): React.ReactNode[] {
       const itemText = line.slice(2);
       const html = formatInlineMarkdown(itemText);
       currentList.push(
-        <li key={`li-${i}`} dangerouslySetInnerHTML={{ __html: html }} className="text-neutral-300" />
+        <li key={`li-${i}`} dangerouslySetInnerHTML={{ __html: html }} className="text-neutral-300" style={{ marginLeft: `${indentLevel * 12}px` }} />
       );
       continue;
     } else {
