@@ -2732,32 +2732,47 @@ ${storyText}
                           const renderBlockContent = (block: Block, originalIndex: number): React.ReactNode => (
                             <>
                               {block.type === "paragraph" && (
-                                <textarea
-                                  id={`block-input-${block.id}`}
-                                  value={block.content || ""}
-                                  onChange={(e) => {
-                                    updateBlock(originalIndex, { content: e.target.value });
-                                    if (slashMenu && slashMenu.blockId === block.id) {
-                                      const val = e.target.value;
-                                      const cursor = e.target.selectionStart || 0;
-                                      const beforeCursor = val.substring(0, cursor);
-                                      const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
-                                      if (match) {
-                                        setSlashMenu({ ...slashMenu, query: match[1] });
-                                      } else {
-                                        setSlashMenu(null);
+                                focusedBlockId === block.id ? (
+                                  <textarea
+                                    id={`block-input-${block.id}`}
+                                    value={block.content || ""}
+                                    onChange={(e) => {
+                                      updateBlock(originalIndex, { content: e.target.value });
+                                      if (slashMenu && slashMenu.blockId === block.id) {
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart || 0;
+                                        const beforeCursor = val.substring(0, cursor);
+                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                        if (match) {
+                                          setSlashMenu({ ...slashMenu, query: match[1] });
+                                        } else {
+                                          setSlashMenu(null);
+                                        }
                                       }
-                                    }
-                                  }}
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                  onFocus={() => setFocusedBlockId(block.id)}
-                                  onBlur={() => setFocusedBlockId(null)}
-                                  placeholder={focusedBlockId === block.id ? "Type text or use '+' to insert different block styles..." : ""}
-                                  style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
-                                  className="w-full bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded resize-none min-h-[1.5em] leading-relaxed transition"
-                                  rows={Math.max(3, (block.content || "").split("\n").length)}
-                                />
+                                    }}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                    onFocus={() => setFocusedBlockId(block.id)}
+                                    onBlur={() => setFocusedBlockId(null)}
+                                    autoFocus
+                                    placeholder="Type text or use '+' to insert different block styles..."
+                                    style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                    className="w-full bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded resize-none min-h-[1.5em] leading-relaxed transition"
+                                    rows={Math.max(3, (block.content || "").split("\n").length)}
+                                  />
+                                ) : (
+                                  <div
+                                    id={`block-display-${block.id}`}
+                                    onPointerDown={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      setFocusedBlockId(block.id);
+                                    }}
+                                    style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                    className="w-full bg-transparent border-none p-1 rounded min-h-[1.5em] leading-relaxed cursor-text whitespace-pre-wrap break-words"
+                                    dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(block.content || "") }}
+                                  />
+                                )
                               )}
                               {block.type === "heading1" && (
                                 <div className="flex items-center gap-1.5 w-full pl-0 text-left">
@@ -2894,63 +2909,93 @@ ${storyText}
                               {block.type === "list-item" && (
                                 <div className="flex items-center gap-1.5 w-full pl-1 text-left">
                                   <span className="text-link font-bold text-sm select-none">•</span>
-                                  <input
-                                    id={`block-input-${block.id}`}
-                                    type="text"
-                                    value={block.content || ""}
-                                    onChange={(e) => {
-                                      updateBlock(originalIndex, { content: e.target.value });
-                                      if (slashMenu && slashMenu.blockId === block.id) {
-                                        const val = e.target.value;
-                                        const cursor = e.target.selectionStart || 0;
-                                        const beforeCursor = val.substring(0, cursor);
-                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
-                                        if (match) {
-                                          setSlashMenu({ ...slashMenu, query: match[1] });
-                                        } else {
-                                          setSlashMenu(null);
+                                  {focusedBlockId === block.id ? (
+                                    <input
+                                      id={`block-input-${block.id}`}
+                                      type="text"
+                                      value={block.content || ""}
+                                      onChange={(e) => {
+                                        updateBlock(originalIndex, { content: e.target.value });
+                                        if (slashMenu && slashMenu.blockId === block.id) {
+                                          const val = e.target.value;
+                                          const cursor = e.target.selectionStart || 0;
+                                          const beforeCursor = val.substring(0, cursor);
+                                          const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                          if (match) {
+                                            setSlashMenu({ ...slashMenu, query: match[1] });
+                                          } else {
+                                            setSlashMenu(null);
+                                          }
                                         }
-                                      }
-                                    }}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                    onFocus={() => setFocusedBlockId(block.id)}
-                                    onBlur={() => setFocusedBlockId(null)}
-                                    placeholder={focusedBlockId === block.id ? "List item..." : ""}
-                                    style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
-                                    className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
-                                  />
+                                      }}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                      onFocus={() => setFocusedBlockId(block.id)}
+                                      onBlur={() => setFocusedBlockId(null)}
+                                      autoFocus
+                                      placeholder="List item..."
+                                      style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                      className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
+                                    />
+                                  ) : (
+                                    <div
+                                      id={`block-display-${block.id}`}
+                                      onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setFocusedBlockId(block.id);
+                                      }}
+                                      style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                      className="flex-1 bg-transparent border-none p-1 rounded cursor-text break-words whitespace-pre-wrap"
+                                      dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(block.content || "") }}
+                                    />
+                                  )}
                                 </div>
                               )}
                               {block.type === "numbered-list" && (
                                 <div className="flex items-center gap-1.5 w-full pl-1 text-left">
                                   <span className="text-neutral-500 font-bold text-xs select-none min-w-[15px]">{block.index || 1}.</span>
-                                  <input
-                                    id={`block-input-${block.id}`}
-                                    type="text"
-                                    value={block.content || ""}
-                                    onChange={(e) => {
-                                      updateBlock(originalIndex, { content: e.target.value });
-                                      if (slashMenu && slashMenu.blockId === block.id) {
-                                        const val = e.target.value;
-                                        const cursor = e.target.selectionStart || 0;
-                                        const beforeCursor = val.substring(0, cursor);
-                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
-                                        if (match) {
-                                          setSlashMenu({ ...slashMenu, query: match[1] });
-                                        } else {
-                                          setSlashMenu(null);
+                                  {focusedBlockId === block.id ? (
+                                    <input
+                                      id={`block-input-${block.id}`}
+                                      type="text"
+                                      value={block.content || ""}
+                                      onChange={(e) => {
+                                        updateBlock(originalIndex, { content: e.target.value });
+                                        if (slashMenu && slashMenu.blockId === block.id) {
+                                          const val = e.target.value;
+                                          const cursor = e.target.selectionStart || 0;
+                                          const beforeCursor = val.substring(0, cursor);
+                                          const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                          if (match) {
+                                            setSlashMenu({ ...slashMenu, query: match[1] });
+                                          } else {
+                                            setSlashMenu(null);
+                                          }
                                         }
-                                      }
-                                    }}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                    onFocus={() => setFocusedBlockId(block.id)}
-                                    onBlur={() => setFocusedBlockId(null)}
-                                    placeholder={focusedBlockId === block.id ? "List item..." : ""}
-                                    style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
-                                    className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
-                                  />
+                                      }}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                      onFocus={() => setFocusedBlockId(block.id)}
+                                      onBlur={() => setFocusedBlockId(null)}
+                                      autoFocus
+                                      placeholder="List item..."
+                                      style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                      className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
+                                    />
+                                  ) : (
+                                    <div
+                                      id={`block-display-${block.id}`}
+                                      onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setFocusedBlockId(block.id);
+                                      }}
+                                      style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                      className="flex-1 bg-transparent border-none p-1 rounded cursor-text break-words whitespace-pre-wrap"
+                                      dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(block.content || "") }}
+                                    />
+                                  )}
                                 </div>
                               )}
                               {block.type === "todo" && (
@@ -2962,37 +3007,57 @@ ${storyText}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     className="w-3.5 h-3.5 rounded border-neutral-600 bg-neutral-900 text-link focus:ring-0 focus:ring-offset-0 cursor-pointer"
                                   />
-                                  <input
-                                    id={`block-input-${block.id}`}
-                                    type="text"
-                                    value={block.content || ""}
-                                    onChange={(e) => {
-                                      updateBlock(originalIndex, { content: e.target.value });
-                                      if (slashMenu && slashMenu.blockId === block.id) {
-                                        const val = e.target.value;
-                                        const cursor = e.target.selectionStart || 0;
-                                        const beforeCursor = val.substring(0, cursor);
-                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
-                                        if (match) {
-                                          setSlashMenu({ ...slashMenu, query: match[1] });
-                                        } else {
-                                          setSlashMenu(null);
+                                  {focusedBlockId === block.id ? (
+                                    <input
+                                      id={`block-input-${block.id}`}
+                                      type="text"
+                                      value={block.content || ""}
+                                      onChange={(e) => {
+                                        updateBlock(originalIndex, { content: e.target.value });
+                                        if (slashMenu && slashMenu.blockId === block.id) {
+                                          const val = e.target.value;
+                                          const cursor = e.target.selectionStart || 0;
+                                          const beforeCursor = val.substring(0, cursor);
+                                          const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                          if (match) {
+                                            setSlashMenu({ ...slashMenu, query: match[1] });
+                                          } else {
+                                            setSlashMenu(null);
+                                          }
                                         }
-                                      }
-                                    }}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                    onFocus={() => setFocusedBlockId(block.id)}
-                                    onBlur={() => setFocusedBlockId(null)}
-                                    placeholder={focusedBlockId === block.id ? "To-do..." : ""}
-                                    style={{
-                                      fontSize: `${12 * globalFontScale}px`,
-                                      color: block.checked ? themeStyles.textMuted : themeStyles.text,
-                                      textDecoration: block.checked ? "line-through" : "none",
-                                      opacity: block.checked ? 0.6 : 1,
-                                    }}
-                                    className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
-                                  />
+                                      }}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                      onFocus={() => setFocusedBlockId(block.id)}
+                                      onBlur={() => setFocusedBlockId(null)}
+                                      autoFocus
+                                      placeholder="To-do..."
+                                      style={{
+                                        fontSize: `${12 * globalFontScale}px`,
+                                        color: block.checked ? themeStyles.textMuted : themeStyles.text,
+                                        textDecoration: block.checked ? "line-through" : "none",
+                                        opacity: block.checked ? 0.6 : 1,
+                                      }}
+                                      className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
+                                    />
+                                  ) : (
+                                    <div
+                                      id={`block-display-${block.id}`}
+                                      onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setFocusedBlockId(block.id);
+                                      }}
+                                      style={{
+                                        fontSize: `${12 * globalFontScale}px`,
+                                        color: block.checked ? themeStyles.textMuted : themeStyles.text,
+                                        textDecoration: block.checked ? "line-through" : "none",
+                                        opacity: block.checked ? 0.6 : 1,
+                                      }}
+                                      className="flex-1 bg-transparent border-none p-1 rounded cursor-text break-words whitespace-pre-wrap"
+                                      dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(block.content || "") }}
+                                    />
+                                  )}
                                 </div>
                               )}
                               {block.type === "toggle" && (
@@ -3007,32 +3072,47 @@ ${storyText}
                                   >
                                     {block.isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                                   </button>
-                                  <input
-                                    id={`block-input-${block.id}`}
-                                    type="text"
-                                    value={block.content || ""}
-                                    onChange={(e) => {
-                                      updateBlock(originalIndex, { content: e.target.value });
-                                      if (slashMenu && slashMenu.blockId === block.id) {
-                                        const val = e.target.value;
-                                        const cursor = e.target.selectionStart || 0;
-                                        const beforeCursor = val.substring(0, cursor);
-                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
-                                        if (match) {
-                                          setSlashMenu({ ...slashMenu, query: match[1] });
-                                        } else {
-                                          setSlashMenu(null);
+                                  {focusedBlockId === block.id ? (
+                                    <input
+                                      id={`block-input-${block.id}`}
+                                      type="text"
+                                      value={block.content || ""}
+                                      onChange={(e) => {
+                                        updateBlock(originalIndex, { content: e.target.value });
+                                        if (slashMenu && slashMenu.blockId === block.id) {
+                                          const val = e.target.value;
+                                          const cursor = e.target.selectionStart || 0;
+                                          const beforeCursor = val.substring(0, cursor);
+                                          const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                          if (match) {
+                                            setSlashMenu({ ...slashMenu, query: match[1] });
+                                          } else {
+                                            setSlashMenu(null);
+                                          }
                                         }
-                                      }
-                                    }}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                    onFocus={() => setFocusedBlockId(block.id)}
-                                    onBlur={() => setFocusedBlockId(null)}
-                                    placeholder={focusedBlockId === block.id ? "Toggle list..." : ""}
-                                    style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
-                                    className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded font-semibold transition"
-                                  />
+                                      }}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                      onFocus={() => setFocusedBlockId(block.id)}
+                                      onBlur={() => setFocusedBlockId(null)}
+                                      autoFocus
+                                      placeholder="Toggle list..."
+                                      style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                      className="flex-1 bg-transparent border-none p-1 focus:bg-neutral-850/50 focus:outline-none focus:ring-1 focus:ring-link/50 rounded font-semibold transition"
+                                    />
+                                  ) : (
+                                    <div
+                                      id={`block-display-${block.id}`}
+                                      onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setFocusedBlockId(block.id);
+                                      }}
+                                      style={{ fontSize: `${12 * globalFontScale}px`, color: themeStyles.text }}
+                                      className="flex-1 bg-transparent border-none p-1 rounded font-semibold cursor-text break-words whitespace-pre-wrap"
+                                      dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(block.content || "") }}
+                                    />
+                                  )}
                                 </div>
                               )}
                               {block.type === "divider" && (
@@ -3054,30 +3134,47 @@ ${storyText}
                                     className="w-5 text-center bg-transparent border-none p-0 text-xs focus:outline-none cursor-pointer"
                                     title="Edit Emoji"
                                   />
-                                  <input
-                                    id={`block-input-${block.id}`}
-                                    type="text"
-                                    value={block.content || ""}
-                                    onChange={(e) => {
-                                      updateBlock(originalIndex, { content: e.target.value });
-                                      if (slashMenu && slashMenu.blockId === block.id) {
-                                        const val = e.target.value;
-                                        const cursor = e.target.selectionStart || 0;
-                                        const beforeCursor = val.substring(0, cursor);
-                                        const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
-                                        if (match) {
-                                          setSlashMenu({ ...slashMenu, query: match[1] });
-                                        } else {
-                                          setSlashMenu(null);
+                                  {focusedBlockId === block.id ? (
+                                    <input
+                                      id={`block-input-${block.id}`}
+                                      type="text"
+                                      value={block.content || ""}
+                                      onChange={(e) => {
+                                        updateBlock(originalIndex, { content: e.target.value });
+                                        if (slashMenu && slashMenu.blockId === block.id) {
+                                          const val = e.target.value;
+                                          const cursor = e.target.selectionStart || 0;
+                                          const beforeCursor = val.substring(0, cursor);
+                                          const match = beforeCursor.match(/(?:^|\s)\/(.*)$/);
+                                          if (match) {
+                                            setSlashMenu({ ...slashMenu, query: match[1] });
+                                          } else {
+                                            setSlashMenu(null);
+                                          }
                                         }
-                                      }
-                                    }}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => handleKeyDown(e, originalIndex)}
-                                    placeholder="Callout note..."
-                                    style={{ fontSize: `${11 * globalFontScale}px`, color: themeStyles.text }}
-                                    className="flex-1 bg-transparent border-none p-0.5 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
-                                  />
+                                      }}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => handleKeyDown(e, originalIndex)}
+                                      onFocus={() => setFocusedBlockId(block.id)}
+                                      onBlur={() => setFocusedBlockId(null)}
+                                      autoFocus
+                                      placeholder="Callout note..."
+                                      style={{ fontSize: `${11 * globalFontScale}px`, color: themeStyles.text }}
+                                      className="flex-1 bg-transparent border-none p-0.5 focus:outline-none focus:ring-1 focus:ring-link/50 rounded transition"
+                                    />
+                                  ) : (
+                                    <div
+                                      id={`block-display-${block.id}`}
+                                      onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setFocusedBlockId(block.id);
+                                      }}
+                                      style={{ fontSize: `${11 * globalFontScale}px`, color: themeStyles.text }}
+                                      className="flex-1 bg-transparent border-none p-0.5 rounded cursor-text break-words whitespace-pre-wrap"
+                                      dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(block.content || "") }}
+                                    />
+                                  )}
                                 </div>
                               )}
                               {block.type === "code" && (
